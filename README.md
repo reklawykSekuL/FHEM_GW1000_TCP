@@ -5,4 +5,6 @@ This a first working draft that gets Live-Data from the weatherstation (CMD_GW10
 
 Link to FHEM-discussion: https://forum.fhem.de/index.php/topic,124794.msg1193601.html#msg1193601
 
+Dependency (perl module): IO::Socket::INET
+
 
