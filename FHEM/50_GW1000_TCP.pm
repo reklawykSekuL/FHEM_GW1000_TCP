@@ -442,9 +442,10 @@ sub updateData($$@) {
 		readingsSingleUpdate($hash, "StationMac", sprintf("%x %x %x %x %x %x", @data), 1 );
 	}
 	#elsif ($cmd == $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}) {
-#		shift(@data);
-#		readingsSingleUpdate($hash, "Firmware Version", sprintf("@data"), 1 );
-#	}
+		shift(@data);
+		my $x = join '', map chr, @data;
+		readingsSingleUpdate($hash, "Firmware Version", sprintf("%s" , $x), 1 );
+	}
 	elsif ($cmd == $GW1000_cmdMap{CMD_GW1000_LIVEDATA}) {
 				
 		readingsBeginUpdate($hash);
