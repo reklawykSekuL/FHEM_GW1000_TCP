@@ -215,7 +215,7 @@ sub GW1000_TCP_Define($$) {
 
 	#if(!(exists $protocolTypes{$hash->{I_IrProtocolName}})) {
 	#	my $err = "Invalid ProtocolName $hash->{I_IrProtocolName}. Must be one of " . join(', ', keys %protocolTypes);
-	#	Log 3, "UniversalRemoteIR <$hash->{name}>: ".$err;
+	#	Log3 $name, 1, "UniversalRemoteIR <$hash->{name}>: ".$err;
 	#	return $err;
 	#}
 
@@ -304,7 +304,7 @@ sub GW1000_TCP_GetUpdate($)
 {
 	my ($hash) = @_;
 	my $name = $hash->{NAME};
-	Log3 $name, 4, "GW1000_TCP: GetUpdate called ...";
+	Log3 $name, 2, "GW1000_TCP: GetUpdate called ...";
 	
 	my ($cmd, @data) = requestData($hash, $GW1000_cmdMap{CMD_READ_STATION_MAC}, 0);
 	updateData($hash, $cmd, @data );
@@ -337,11 +337,11 @@ sub requestData($$@) {
 	
 	if($socket) {
     	$hash->{STATE} = "Connected";
-    	Log 2, "GW1000_TCP <$hash->{name}>: connected to server ($hash->{I_GW1000_IP}:$hash->{I_GW1000_Port})" ;
+    	Log3 $name, 2, "GW1000_TCP <$hash->{name}>: connected to server ($hash->{I_GW1000_IP}:$hash->{I_GW1000_Port})" ;
 
   	} else {
 		$hash->{STATE} = "Disconnected";
-		Log 2, "GW1000_TCP <$hash->{name}>: connection failed to server ($hash->{I_GW1000_IP}:$hash->{I_GW1000_Port})";
+		Log3 $name, 1, "GW1000_TCP <$hash->{name}>: connection failed to server ($hash->{I_GW1000_IP}:$hash->{I_GW1000_Port})";
 		return 0;
 	}	
 	
@@ -358,7 +358,7 @@ sub requestData($$@) {
 	my $req = pack('C*', @packet);
 
 	my $size = $socket->send($req);
-	Log 2, "GW1000_TCP <$hash->{name}>: sent data (size: $size):" . unpack('H*', $req);
+	Log3 $name, 3, "GW1000_TCP <$hash->{name}>: sent data (size: $size):" . unpack('H*', $req);
 
 	# notify server that request has been sent
 	shutdown($socket, 1);
@@ -367,7 +367,7 @@ sub requestData($$@) {
 	my $response_string = "";
 	$socket->recv($response_string, 1024);
 	my @response = unpack('(C)*', $response_string);
-	Log 2, "GW1000_TCP <$hash->{name}>: received response: " . unpack('H*', $response_string) . " (@response)";
+	Log3 $name, 4, "GW1000_TCP <$hash->{name}>: received response: " . unpack('H*', $response_string) . " (@response)";
 
 	$socket->close();
 	
@@ -390,19 +390,19 @@ sub requestData($$@) {
 	my @response_data = @response;
 	
 	$err = sprintf("HEADER: 0x%x 0x%x; CMD: 0x%x; SIZE: $response_size; CHECKSUM: $response_cs; DATA: @response_data", $response_header[0], $response_header[1], $response_cmd);
-	Log 2, "GW1000_TCP <$hash->{name}>: $err";
+	Log3 $name, 4, "GW1000_TCP <$hash->{name}>: $err";
 	
 	#check fixed header = 0xffff
 	if ($response_header[0] != 0xff || $response_header[1] != 0xff) {
 		$err = sprintf("ERROR: fixed header is 0x%x 0x%x ! (Should be '0xff 0xff')", $response_header[0], $response_header[1]);
-		Log 1, "GW1000_TCP <$hash->{name}>: $err";
+		Log3  $name,1, "GW1000_TCP <$hash->{name}>: $err";
 		return;
 	};
 	
 	#check cmd is same as requested
 	if ($response_cmd != $cmd) {
 		$err = sprintf("ERROR: receved not requested dataset (requested: 0x%x; received: 0x%x)", $cmd, $response_cmd);
-		Log 1, "GW1000_TCP <$hash->{name}>: $err";
+		Log3 $name, 1, "GW1000_TCP <$hash->{name}>: $err";
 		return;
 	};
 	
@@ -411,7 +411,7 @@ sub requestData($$@) {
 	my $size_calc = scalar(@response_data) + 2 + $sizeOfsize;
 	if ($response_size != $size_calc) {
 		$err = sprintf("ERROR: response size is not equal to size reported in response (reported: $response_size; actual: $size_calc)");
-		Log 1, "GW1000_TCP <$hash->{name}>: $err";
+		Log3 $name, 1, "GW1000_TCP <$hash->{name}>: $err";
 		return;
 	};
 	
@@ -462,18 +462,18 @@ sub updateData($$@) {
 					elsif ($GW1000_Items{$item}{size} == 4) {$value = unpack('q', pack('Q', $value));}
 					else {
 						$msg = sprintf("ERROR: Received %s (0x%x) but don't know how to convert value of size %d to signed integer. Skipping...", $GW1000_Items{$item}{name}, $item, $GW1000_Items{$item}{size});	
-						Log3($name, 2, "GW1000_TCP: $msg"); 
+						Log3 $name, 1, "GW1000_TCP: $msg"; 
 					}
 				}
 			 
 				$value *= $GW1000_Items{$item}{factor};
 				
 				$msg = sprintf("Received %s (0x%x) = %2.1f",  $GW1000_Items{$item}{name}, $item, $value);	
-				Log3($name, 2, "GW1000_TCP: $msg"); 
+				Log3 $name, 4, "GW1000_TCP: $msg"; 
 				readingsBulkUpdate($hash, $GW1000_Items{$item}{name}, sprintf("%2.1f", $value) );
 			} else {
 				$msg = sprintf("Item (0x%x) is unknown. Skipping complete package!", $item);
-				Log3($name, 2, "GW1000_TCP: $msg"); 
+				Log3 $name, 1, "GW1000_TCP: $msg"; 
 				readingsEndUpdate($hash, 1);
 				return 1;
 			}
@@ -482,7 +482,7 @@ sub updateData($$@) {
 		readingsEndUpdate($hash, 1);
 	}
 	else {
-		Log3($name, 2, "GW1000_TCP: Unkown data received. Skipping!"); 
+		Log3 $name, 1, "GW1000_TCP: Unkown data received. Skipping!"; 
 		
 	}
 	
