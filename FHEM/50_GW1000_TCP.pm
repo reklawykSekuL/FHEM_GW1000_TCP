@@ -1,7 +1,22 @@
+##############################################
+# $Id: 50_G1000_TCP.pm 25203 2022-03-08 09:18:29Z sepo83 $
+#
+# GW1000_TCP provides support for the ecowitt weatherstation LAN/WLAN Gateway
+# GW1000/WH2650
+# TODO:
+# - replace IO::Socket::INET  with   DevIo
+# - implement coplete API (i.e. Rainfall GW2000A-WIFI2EF + WS90)
+# - separate static (Firmware version, mac) from dynamic readings (ie LIVEDATA)
+#
 package main;
+
 use strict;
 use warnings;
-use IO::Socket::INET; # for TCP client connection
+
+#use IO::Socket::INET; # for TCP client connection
+use DevIo;
+use Time::HiRes qw(gettimeofday time);
+use Time::Local;
 use List::Util 'sum';
 
 # use List::MoreUtils qw(first_index);
@@ -163,11 +178,27 @@ my %GW1000_Items = (
 	0x79 => {name => "Leaf Wetness 8", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
 );
 
+use constant {
+	GW1000_TCP_STATE_NONE               => 0,
+    GW1000_TCP_STATE_QUERY_APP          => 1,
+	GW1000_TCP_STATE_RUNNING            => 99,
+	GW1000_TCP_STATE_UNSUPPORTED_FW		=> 299,	
+	GW1000_TCP_CMD_TIMEOUT              => 3,
+	GW1000_TCP_CMD_RETRY_CNT            => 3,
+};
+
 my @GW1000_header = (0xff, 0xff);
 
 my %attributeMap = (
 	connectTimeout => 'connectTimeout',
 	updateIntervall => 'updateIntervall',
+);
+
+my %sets = (
+	"reopen"       => "noArg",
+	"open"         => "noArg",
+	"close"        => "noArg",
+	"restart"      => "noArg",
 );
 
 sub GW1000_TCP_Initialize($) {
@@ -179,7 +210,10 @@ sub GW1000_TCP_Initialize($) {
     $hash->{GetFn}      = 'GW1000_TCP_Get';
     $hash->{AttrFn}     = 'GW1000_TCP_Attr';
     $hash->{ReadFn}     = 'GW1000_TCP_Read';
+    $hash->{ReadyFn}    = "GW1000_TCP_Ready";
+	$hash->{WriteFn}    = "GW1000_TCP_Write";
     $hash->{NotifyFn}   = "GW1000_TCP_Notify";
+	$hash->{ShutdownFn} = "GW1000_TCP_Shutdown";
 
     #TODO fill AttrList from %attributeMap
     $hash->{AttrList} =
@@ -188,6 +222,12 @@ sub GW1000_TCP_Initialize($) {
         . $readingFnAttributes;
 
 }
+sub GW1000_TCP_InitConnection($);
+sub GW1000_TCP_Connect($$);
+sub GW1000_TCP_Reopen($;$);
+sub GW1000_TCP_Read($);
+sub GW1000_TCP_send($$$;$);
+#sub GW1000_TCP_send_frame($$@);
 
 sub GW1000_TCP_Define($$) {
 	my ($hash, $def) = @_;
@@ -195,7 +235,7 @@ sub GW1000_TCP_Define($$) {
 
 	#set default values
 	$hash->{I_GW1000_Port} = '45000';
-	
+	#$hash->{DevType} = 'LGW';
 	#read defines
 	if(int(@param) < 3) {
 		return "too few parameters: define <name> GW1000_TCP <IP> <Port>";
@@ -203,6 +243,20 @@ sub GW1000_TCP_Define($$) {
 
 	$hash->{name}  = $param[0];
 	$hash->{I_GW1000_IP} = $param[2];
+	$hash->{I_GW1000_Port} = $param[3];
+
+	Log3 $hash->{name}, 5, "GW1000_TCP_Define() start.";  
+	# first argument is the hostname or IP address of the device (e.g. "192.168.1.120")
+    my $dev = $hash->{I_GW1000_IP};
+
+    return "no device given" unless($dev);
+  
+    # add a default port (45000), if not explicitly given by user
+    $dev .= ':45000' if(not $dev =~ m/:\d+$/);
+
+	# set the IP/Port for DevIo
+  	$hash->{DeviceName} = $dev;
+	
 	
 	#$hash->{helper}{ir_codes_hash} = {KEY_UNKNOWN => '0x0'};
 	#$hash->{helper}{ir_codes_revhash} = {'0x0' => 'KEY_UNKNOWN'};
@@ -223,16 +277,29 @@ sub GW1000_TCP_Define($$) {
 	$hash->{NOTIFYDEV} = "global";
 	
 	#start cyclic update of GW1000
-	GW1000_TCP_GetUpdate($hash);
+	#GW1000_TCP_GetUpdate($hash);
+	GW1000_TCP_InitConnection($hash) if ($init_done);
 	
+	Log3 $hash->{name}, 5, "GW1000_TCP_Define() end.";
 	return undef;
 }
 
-sub GW1000_TCP_Undef($$) {
-	my ($hash, $arg) = @_;
-	
-	# delete timer
+sub GW1000_TCP_Undef($$;$)
+{
+	my ($hash, $name, $noclose) = @_;
+
+	Log3 $hash->{NAME}, 5, "GW1000_TCP_Undef() start.";  
 	RemoveInternalTimer($hash, "GW1000_TCP_GetUpdate");
+
+	if (!$noclose) {
+		my $oldFD = $hash->{FD};
+		DevIo_CloseDev($hash);
+		Log3($hash, 3, "${name} device closed") if (defined($oldFD) && $oldFD && (!defined($hash->{FD})));
+	}
+	$hash->{DevState} = GW1000_TCP_STATE_NONE;
+	$hash->{XmitOpen} = 0;
+	# GW1000_TCP_updateCondition($hash);
+	Log3 $hash->{NAME}, 5, "GW1000_TCP_Undef() end.";  
 	
 	return undef;
 }
@@ -249,24 +316,28 @@ sub GW1000_TCP_Get($@) {
 }
 
 sub GW1000_TCP_Set($@) {
-	my ( $hash, $name, $cmd, @args ) = @_;
+	my ($hash, $name, $cmd, @a) = @_;
 
-	return "\"set $name\" needs at least one argument" unless(defined($cmd));
+	my $arg = join(" ", @a);
 
-	my $cmd_list = "";
-	$cmd_list .= "send:select," . join(',', sort(keys(%{$hash->{helper}{ir_codes_hash}}))) . " ";
-	$cmd_list .= "loadLircdConfig ";
+	return "\"set\" needs at least one parameter" if (!$cmd);
 
-	if($cmd eq "loadLircdConfig") {
-
+	if ($cmd eq "reopen") {
+		GW1000_TCP_Reopen($hash);
+	} elsif ($cmd eq "close") {
+		GW1000_TCP_Undef($hash, $name);
+		readingsSingleUpdate($hash, "state", "closed", 1);
+		$hash->{XmitOpen} = 0;
+	} elsif ($cmd eq "open") {
+		GW1000_TCP_InitConnection($hash);
+	} elsif ($cmd eq "restart") {
+		#ToDo GW1000_TCP_send($hash, );
+	} else {
+		return "Unknown argument ${cmd}, choose one of " .
+		    join(" ",map {"$_" . ($sets{$_} ? ":$sets{$_}" : "")} keys %sets);
 	}
-	elsif ($cmd eq "send") {
-		#set readings
-	  	#readingsSingleUpdate($hash, "lastCommand", $args[0], 1);
-	}
-	else {
-		return "Unknown argument $cmd, choose one of $cmd_list";
-	}
+	Log3 $name, 5, "GW1000_TCP_Set() End.";  
+	return undef;
 }
 
 sub GW1000_TCP_Attr(@) {
@@ -286,6 +357,8 @@ sub GW1000_TCP_Notify($$)
 	my ($hash, $dev_hash) = @_;
 	my $ownName = $hash->{NAME}; # own name / hash
 
+	Log3 $hash->{NAME}, 5, "GW1000_TCP_Notify() start.";  
+
 	return "" if(IsDisabled($ownName)); # Return without any further action if the module is disabled
 	
 	my $devName = $dev_hash->{NAME}; # Device that created the events
@@ -297,6 +370,7 @@ sub GW1000_TCP_Notify($$)
 		#start cyclic update of GW1000
 		GW1000_TCP_GetUpdate($hash);
 	}
+	Log3 $hash->{NAME}, 5, "GW1000_TCP_Notify() end.";  
 	
 }
 
@@ -306,18 +380,369 @@ sub GW1000_TCP_GetUpdate($)
 	my $name = $hash->{NAME};
 	Log3 $name, 2, "GW1000_TCP: GetUpdate called ...";
 	
-	my ($cmd, @data) = requestData($hash, $GW1000_cmdMap{CMD_READ_STATION_MAC}, 0);
-	updateData($hash, $cmd, @data );
+	#my ($cmd, @data) = requestData($hash, $GW1000_cmdMap{CMD_READ_STATION_MAC}, 0);
+	#updateData($hash, $cmd, @data );
+
+	#($cmd, @data) = requestData($hash, $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}, 0);
+	#updateData($hash, $cmd, @data );
 	
-	($cmd, @data) = requestData($hash, $GW1000_cmdMap{CMD_GW1000_LIVEDATA}, 0);
-	updateData($hash, $cmd, @data );
-	
-	($cmd, @data) = requestData($hash, $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}, 0);
-	updateData($hash, $cmd, @data );
-	
+	GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_GW1000_LIVEDATA}, 0);
+	#updateData($hash, $cmd, @data );
 		
 	# start new timer.
 	InternalTimer(gettimeofday()+AttrVal($name, "updateIntervall", 16), "GW1000_TCP_GetUpdate", $hash);
+	Log3 $name, 5, "GW1000_TCP_GetUpdate() End.";  
+}
+
+sub GW1000_TCP_Connect($$)
+{
+	my ($hash, $err) = @_;
+	my $name = $hash->{NAME};
+
+	Log3 $name, 5, "GW1000_TCP_Connect() Start.";  
+#	if (defined(AttrVal($name, "dummy", undef))) {
+#		GW1000_TCP_Dummy($hash);
+#		return;
+#	}
+
+	if ($err) {
+		my $retry;
+		if(defined($hash->{NEXT_OPEN})) {
+			$retry = ", retrying in " . sprintf("%.2f", ($hash->{NEXT_OPEN} - time())) . "s";
+		}
+		Log3($hash, 3, "GW1000_TCP $hash->{NAME}: ${err}".(defined($retry)?$retry:""));
+		if (!defined($hash->{NEXT_OPEN})) {
+			Log3($hash, 0, "DevIO giving up on ${err}, retrying anyway");
+			GW1000_TCP_Reopen($hash);
+		}
+	}
+	Log3 $name, 5, "GW1000_TCP_Connect() End.";  
+}
+
+sub GW1000_TCP_Ready($)
+{
+	my ($hash) = @_;
+	my $name = $hash->{NAME};
+	my $state = ReadingsVal($name, "state", "unknown");
+
+	Log3($hash, 4, "GW1000_TCP ${name} ready: ${state}");
+
+	if ((!$hash->{'.lgwHash'}) && $state eq "disconnected") {
+		# don't immediately reconnect when we just disconnected, delay
+		# for 5s because remote closed the connection on us
+		if (defined($hash->{LastOpen}) &&
+		    $hash->{LastOpen} + 5 >= gettimeofday()) {
+  	        Log3 $name, 5, "GW1000_TCP_Ready(() End_1.";  
+			return 0;
+		}
+        Log3 $name, 5, "GW1000_TCP_Ready(() End_2.";  
+		return GW1000_TCP_Reopen($hash, 1);
+	}
+	Log3 $name, 5, "GW1000_TCP_Ready(() End.";  
+	return 0;
+}
+
+sub GW1000_TCP_Reopen($;$)
+{
+	my ($hash, $noclose) = @_;
+	$hash = $hash->{'.lgwHash'} if ($hash->{'.lgwHash'});
+	my $name = $hash->{NAME};
+
+	Log3($hash, 4, "GW1000_TCP ${name} Reopen");
+
+	GW1000_TCP_Undef($hash, $name, $noclose);
+
+  	Log3 $name, 5, "GW1000_TCP_Reopen() End.";  
+	return DevIo_OpenDev($hash, 1, "GW1000_TCP_DoInit", \&GW1000_TCP_Connect);
+}
+
+sub GW1000_TCP_DoInit($)
+{
+	my ($hash) = @_;
+	my $name = $hash->{NAME};
+
+  	Log3 $name, 5, "GW1000_TCP_DoInit() start.";  
+
+	$hash->{CNT} = 0x00;
+	delete($hash->{DEVCNT});
+	delete($hash->{Helper});
+	delete($hash->{owner});
+	$hash->{DevState} = GW1000_TCP_STATE_NONE;
+	$hash->{XmitOpen} = 0;
+	$hash->{LastOpen} = gettimeofday();
+
+	#$hash->{LGW_Init} = if ($hash->{DevType} =~ m/^LGW/);
+
+	$hash->{Helper}{Log}{IDs} = [ split(/,/, AttrVal($name, "logIDs", "")) ];
+	$hash->{Helper}{Log}{Resolve} = 1;
+
+	RemoveInternalTimer($hash);
+
+	InternalTimer(gettimeofday()+1, "GW1000_TCP_StartInit", $hash, 0);
+  	Log3 $name, 5, "GW1000_TCP_DoInit() end.";  
+	return;
+}
+
+sub GW1000_TCP_StartInit($)
+{
+	my ($hash) = @_;
+	my $name = $hash->{NAME};
+
+	Log3($hash, 4, "GW1000_TCP ${name} StartInit");
+
+	RemoveInternalTimer($hash);
+
+	#InternalTimer(gettimeofday()+GW1000_TCP_CMD_TIMEOUT, "GW1000_TCP_CheckCmdResp", $hash, 0);
+
+	$hash->{DevState} = GW1000_TCP_STATE_QUERY_APP;
+	GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_READ_STATION_MAC}, 0);
+	GW1000_TCP_updateCondition($hash);
+
+	GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}, 0);
+	GW1000_TCP_updateCondition($hash);
+
+	InternalTimer(gettimeofday()+2, "GW1000_TCP_GetUpdate", $hash, 0);
+	return;
+}
+
+
+sub GW1000_TCP_InitConnection($)
+{
+	my ($hash) = @_;
+	my $name = $hash->{NAME};
+
+	Log3 $name, 5, "GW1000_TCP_InitConnection() start.";  
+
+	if (defined(AttrVal($name, "dummy", undef))) {
+		#readingsSingleUpdate($hash, "state", "dummy", 1);
+		GW1000_TCP_updateCondition($hash);
+    	Log3 $name, 5, "GW1000_TCP_InitConnection() End_1.";  
+		return;
+	}
+
+	if (!$init_done) {
+		#handle rereadcfg
+		InternalTimer(gettimeofday()+15, "GW1000_TCP_InitConnection", $hash, 0);
+    	Log3 $name, 5, "GW1000_TCP_InitConnection() End_2.";  
+		return;
+	}
+
+	DevIo_OpenDev($hash, 0, "GW1000_TCP_DoInit", \&GW1000_TCP_Connect);
+    Log3 $name, 5, "GW1000_TCP_InitConnection() End.";  
+
+	return;
+}
+
+sub GW1000_TCP_Shutdown($)
+{
+	my ($hash) = @_;
+	my $name = $hash->{NAME};
+
+	Log3 $name, 5, "GW1000_TCP_Shutdown() start.";  
+
+	DevIo_CloseDev($hash);
+
+	Log3 $name, 5, "GW1000_TCP_Shutdown() end.";
+	return undef;
+}
+
+sub GW1000_TCP_updateCondition($)
+{
+	my ($hash) = @_;
+	my $name = $hash->{NAME};
+	my $cond = "disconnected";
+	my $loadLvl = "suspended";
+
+	if (!defined($hash->{Helper}{Initialized})) {
+		$cond = "init";
+		$loadLvl = "suspended";
+	}
+
+	if ($hash->{DevState} == GW1000_TCP_STATE_NONE) {
+		$cond = "disconnected";
+		$loadLvl = "suspended";
+	} elsif ($hash->{DevState} == GW1000_TCP_STATE_UNSUPPORTED_FW) {
+		$cond = "unsupported firmware";
+		$loadLvl = "suspended";
+	}
+
+	if ((defined($cond) && $cond ne ReadingsVal($name, "cond", "")) ||
+	    (defined($loadLvl) && $loadLvl ne ReadingsVal($name, "loadLvl", ""))) {
+		readingsBeginUpdate($hash);
+		readingsBulkUpdate($hash, "cond", $cond)
+			if (defined($cond) && $cond ne ReadingsVal($name, "cond", ""));
+		readingsBulkUpdate($hash, "loadLvl", $loadLvl)
+			if (defined($loadLvl) && $loadLvl ne ReadingsVal($name, "loadLvl", ""));
+		readingsEndUpdate($hash, 1);
+	}
+}
+
+sub GW1000_TCP_send_frame($$@) 
+{
+	my ($hash, $cmd, @data) = @_;
+	my $name = $hash->{NAME};
+
+	Log3 $hash, 5, "GW1000_TCP_send_frame start.";
+
+	# data to send to a server
+	my @packet;
+	push(@packet, @GW1000_header);
+	push(@packet, $cmd);
+	push(@packet, scalar(@data) + 3);
+	push(@packet, @data);
+	push(@packet, sum(@packet) - sum(@GW1000_header));
+	
+	my $req = pack('C*', @packet);
+
+
+	my $sendtime = scalar(gettimeofday());
+	DevIo_SimpleWrite($hash, $req, 0);
+
+	$sendtime;
+}
+
+sub GW1000_TCP_CheckCmdResp($)
+{
+	my ($hash) = @_;
+	my $name = $hash->{NAME};
+
+	RemoveInternalTimer($hash);
+
+	#The data we wait for might have already been received but never
+	#read from the FD. Do a last check now and process new data.
+	if (defined($hash->{FD})) {
+		my $rin = '';
+		vec($rin, $hash->{FD}, 1) = 1;
+		my $n = select($rin, undef, undef, 0);
+		if ($n > 0) {
+			Log3($hash, 5, "GW1000_TCP ${name} GW1000_TCP_CheckCmdResp: FD is readable, this might be the data we are looking for!");
+			#We will be back very soon!
+			InternalTimer(gettimeofday()+0, "GW1000_TCP_CheckCmdResp", $hash, 0);
+			GW1000_TCP_Read($hash);
+			return;
+		}
+	}
+
+	if ($hash->{DevState} != GW1000_TCP_STATE_RUNNING) {
+		if ((!defined($hash->{Helper}{AckPending}{$hash->{CNT}}{frame})) ||
+		    (defined($hash->{Helper}{AckPending}{$hash->{CNT}}{resend}) &&
+		     $hash->{Helper}{AckPending}{$hash->{CNT}}{resend} >= GW1000_TCP_CMD_RETRY_CNT)) {
+			Log3($hash, 1, "GW1000_TCP ${name} did not respond after all, reopening");
+			GW1000_TCP_Reopen($hash);
+		} else {
+			$hash->{Helper}{AckPending}{$hash->{CNT}}{resend}++;
+			Log3($hash, 1, "GW1000_TCP ${name} did not respond for the " .
+			     $hash->{Helper}{AckPending}{$hash->{CNT}}{resend} .
+			     ". time, resending");
+			# GW1000_TCP_send_frame($hash, pack("H*", $hash->{Helper}{AckPending}{$hash->{CNT}}{frame}));
+			InternalTimer(gettimeofday()+GW1000_TCP_CMD_TIMEOUT, "GW1000_TCP_CheckCmdResp", $hash, 0);
+		}
+	}
+
+	return;
+}
+
+sub GW1000_TCP_Read($)
+{
+	my ($hash) = @_;
+	my $name = $hash->{NAME};
+	my $recvtime = gettimeofday();
+
+	my $buf = DevIo_SimpleRead($hash);
+	return "" if (!defined($buf));
+
+	my $err = "";
+	#$buf = HMUARTLGW_decrypt($hash, $buf) if ($hash->{'.crypto'});
+
+	Log3($hash, 5, "HMUARTLGW ${name} read raw (".length($buf)."): ".unpack("H*", $buf));
+
+	my $p = pack("H*", $hash->{PARTIAL}) . $buf;
+	$hash->{PARTIAL} .= unpack("H*", $buf);
+
+	#return HMUARTLGW_LGW_Init($hash) if ($hash->{LGW_Init});
+
+	#return HMUARTLGW_LGW_HandleKeepAlive($hash) if ($hash->{DevType} eq "LGW-KeepAlive");
+
+	#need at least one frame delimiter
+	#return if (!($p =~ m/\xfd/));
+
+	#garbage in the beginning?
+	#if (!($p =~ m/^\xfd/)) {
+	#	$p = substr($p, index($p, chr(0xfd)));
+	#}
+
+	# receive a response of up to 1024 characters from server
+	my $response_string = $p;
+	# $socket->recv($response_string, 1024);
+	my @response = unpack('(C)*', $response_string);
+	Log3 $name, 4, "GW1000_TCP <$hash->{name}>: received response: " . unpack('H*', $response_string) . " (@response)";
+
+	# $socket->close();
+	
+	# unpack response
+	my @response_header = (shift(@response), shift(@response));
+	my $response_cmd = shift(@response);
+	my $response_size = 0;
+	my $sizeOfsize = 0;
+	if ($response_cmd == $GW1000_cmdMap{CMD_BROADCAST} || $response_cmd == $GW1000_cmdMap{CMD_GW1000_LIVEDATA}) {
+		# size is 2 byte
+		$response_size = shift(@response) * 256 + shift(@response);
+		$sizeOfsize = 2;
+	} else {
+		# size is 1 byte
+		$response_size = shift(@response);
+		$sizeOfsize = 1;
+	}
+	
+	my $response_cs = pop(@response);
+	my @response_data = @response;
+	
+	$err = sprintf("HEADER: 0x%x 0x%x; CMD: 0x%x; SIZE: $response_size; CHECKSUM: $response_cs; DATA: @response_data", $response_header[0], $response_header[1], $response_cmd);
+	Log3 $name, 4, "GW1000_TCP <$hash->{name}>: $err";
+	
+	#check fixed header = 0xffff
+	if ($response_header[0] != 0xff || $response_header[1] != 0xff) {
+		$err = sprintf("ERROR: fixed header is 0x%x 0x%x ! (Should be '0xff 0xff')", $response_header[0], $response_header[1]);
+		Log3  $name,1, "GW1000_TCP <$hash->{name}>: $err";
+		return;
+	};
+	
+	#check cmd is same as requested
+	#if ($response_cmd != $cmd) {
+	#	$err = sprintf("ERROR: receved not requested dataset (requested: 0x%x; received: 0x%x)", $cmd, $response_cmd);
+	#	Log3 $name, 1, "GW1000_TCP <$hash->{name}>: $err";
+	#	return;
+	#};
+	
+	#check size (SIZE: 1 byte, packet size，counted from CMD till CHECKSUM)
+	## REMARK some packages have size/2
+	my $size_calc = scalar(@response_data) + 2 + $sizeOfsize;
+	if ($response_size != $size_calc) {
+		$err = sprintf("ERROR: response size is not equal to size reported in response (reported: $response_size; actual: $size_calc)");
+		Log3 $name, 1, "GW1000_TCP <$hash->{name}>: $err";
+		return;
+	};
+	
+	
+	#check checksum (CHECKSUM: 1 byte, CHECKSUM=CMD+SIZE+DATA1+DATA2+...+DATAn)
+	###DISABLE checksum test, since its not clear how it is calculated
+	#my $cs_calc = ($response_cmd + $response_size + sum(@response_data)) % 255;
+	#if ($response_cs != $cs_calc) {
+	#	$err = sprintf("ERROR: response checksum is not equal to chescksum reported in response (reported: $response_cs; actual: $cs_calc)");
+	#	Log 1, "GW1000_TCP <$hash->{name}>: $err";
+	#	return;
+	#};
+
+	updateData( $hash, $response_cmd, @response_data);
+
+	my $unprocessed;
+
+
+	if (defined($unprocessed)) {
+		$hash->{PARTIAL} = unpack("H*", $unprocessed);
+	} else {
+		$hash->{PARTIAL} = '';
+	}
 }
 
 ##aux functions
@@ -441,7 +866,7 @@ sub updateData($$@) {
 		
 		readingsSingleUpdate($hash, "StationMac", sprintf("%x %x %x %x %x %x", @data), 1 );
 	}
-	#elsif ($cmd == $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}) {
+	elsif ($cmd == $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}) {
 		shift(@data);
 		my $x = join '', map chr, @data;
 		readingsSingleUpdate($hash, "Firmware Version", sprintf("%s" , $x), 1 );
