@@ -3,25 +3,23 @@
 #
 # GW1000_TCP provides support for the ecowitt weatherstation LAN/WLAN Gateway
 # GW1000/WH2650
+#
 # TODO:
-# - replace IO::Socket::INET  with   DevIo
+# - update modul documentation
 # - implement coplete API (i.e. Rainfall GW2000A-WIFI2EF + WS90)
-# - separate static (Firmware version, mac) from dynamic readings (ie LIVEDATA)
 #
 package main;
 
 use strict;
 use warnings;
 
-#use IO::Socket::INET; # for TCP client connection
 use DevIo;
 use Time::HiRes qw(gettimeofday time);
 use Time::Local;
 use List::Util 'sum';
 
-# use List::MoreUtils qw(first_index);
 
-## API from https://osswww.ecowitt.net/uploads/20210716/WN1900%20GW1000,1100%20WH2680,2650%20telenet%20v1.6.0%20.pdf
+## API from https://osswww.ecowitt.net/uploads/20210716/WN1900%20GW1000,1100%20WH2680,2650%20telenet%20v1.6.4%20.pdf
 my %GW1000_cmdMap = (
 	CMD_WRITE_SSID 				=> 0x11,		# send SSID and Password to WIFI module
 	CMD_BROADCAST 				=> 0x12,		# UDP cast for device echo，answer back data size is 2 Bytes
@@ -60,136 +58,211 @@ my %GW1000_cmdMap = (
 	CMD_READ_SENSOR_ID_NEW 		=> 0x3C,		# this is reserved for newly added sensor
 	CMD_WRITE_REBOOT 			=> 0x40,		# system restart
 	CMD_WRITE_RESET 			=> 0x41,		# reset to default
-	CMD_READ_FIRMWARE_VERSION	=> 0x50,		# frimware version
 	CMD_READ_CUSTOMIZED_PATH 	=> 0x51,		
 	CMD_WRITE_CUSTOMIZED_PATH 	=> 0x52,		
 	CMD_GET_CO2_OFFSET 			=> 0x53,		# CO2 OFFSET
 	CMD_SET_CO2_OFFSET 			=> 0x54,		# CO2 OFFSET
+	CMD_READ_RSTRAIN_TIME       => 0x57,        # read rain and piezo rain data and reset setting
+	CMD_WRITE_RSTRAIN_TIME      => 0x58,        # write rain and piezo rain data and reset setting
+	
 );
 my %GW1000_cmdMap_reversed = reverse %GW1000_cmdMap;
 
 my %GW1000_Items = (
-	0x01 => {name => "Indoor Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x02 => {name => "Outdoor Temperature", 		size => 2, isSigned => 1, factor => 1, unit => "°C"}, 
-	0x03 => {name => "Dew point",		 			size => 2, isSigned => 0, factor => 1, unit => "°C"}, 
-	0x04 => {name => "Wind chill", 					size => 2, isSigned => 0, factor => 1, unit => "°C"},
-	0x05 => {name => "Heat index", 					size => 2, isSigned => 0, factor => 1, unit => "°C"},
-	0x06 => {name => "Indoor Humidity", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x07 => {name => "Outdoor Humidity", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x08 => {name => "Absolutely Barometric ", 		size => 2, isSigned => 0, factor => 0.1, unit => "hpa"}, 
-	0x09 => {name => "Relative Barometric", 		size => 2, isSigned => 0, factor => 0.1, unit => "hpa"},
-	0x0A => {name => "Wind Direction", 				size => 2, isSigned => 0, factor => 1, unit => "360°"},
-	0x0B => {name => "Wind Speed ", 				size => 2, isSigned => 0, factor => 1, unit => "m/s"}, 
-	0x0C => {name => "Gust Speed", 					size => 2, isSigned => 0, factor => 1, unit => "m/s"}, 
-	0x0D => {name => "Rain Event", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
-	0x0E => {name => "Rain Rate", 					size => 2, isSigned => 0, factor => 1, unit => "mm/h"},
-	0x0F => {name => "Rain hour ", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
-	0x10 => {name => "Rain Day", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
-	0x11 => {name => "Rain Week", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
-	0x12 => {name => "Rain Month", 					size => 4, isSigned => 0, factor => 1, unit => "mm"}, 
-	0x13 => {name => "Rain Year", 					size => 4, isSigned => 0, factor => 1, unit => "mm"}, 
-	0x14 => {name => "Rain Totals", 				size => 4, isSigned => 0, factor => 1, unit => "mm"}, 
+	0x01 => {name => "Indoor_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x02 => {name => "Outdoor_Temperature", 		size => 2, isSigned => 1, factor => 0.1, unit => "°C"}, 
+	0x03 => {name => "Dew_point",		 			size => 2, isSigned => 0, factor => 1, unit => "°C"}, 
+	0x04 => {name => "Wind_chill", 					size => 2, isSigned => 0, factor => 1, unit => "°C"},
+	0x05 => {name => "Heat_index", 					size => 2, isSigned => 0, factor => 1, unit => "°C"},
+	0x06 => {name => "Indoor_Humidity", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x07 => {name => "Outdoor_Humidity", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x08 => {name => "Absolutely_Barometric ", 		size => 2, isSigned => 0, factor => 0.1, unit => "hpa"}, 
+	0x09 => {name => "Relative_Barometric", 		size => 2, isSigned => 0, factor => 0.1, unit => "hpa"},
+	0x0A => {name => "Wind_Direction", 				size => 2, isSigned => 0, factor => 1, unit => "360°"},
+	0x0B => {name => "Wind_Speed ", 				size => 2, isSigned => 0, factor => 1, unit => "m/s"}, 
+	0x0C => {name => "Gust_Wind_Speed", 					size => 2, isSigned => 0, factor => 1, unit => "m/s"}, 
+	0x0D => {name => "Rain_Event", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
+	0x0E => {name => "Rain_Rate", 					size => 2, isSigned => 0, factor => 1, unit => "mm/h"},
+	0x0F => {name => "Rain_Hour ", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
+	0x10 => {name => "Rain_Day", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
+	0x11 => {name => "Rain_Week", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
+	0x12 => {name => "Rain_Month", 					size => 4, isSigned => 0, factor => 1, unit => "mm"}, 
+	0x13 => {name => "Rain_Year", 					size => 4, isSigned => 0, factor => 1, unit => "mm"}, 
+	0x14 => {name => "Rain_Totals", 				size => 4, isSigned => 0, factor => 1, unit => "mm"}, 
 	0x15 => {name => "Light", 						size => 4, isSigned => 0, factor => 1, unit => "lux"}, 
 	0x16 => {name => "UV", 							size => 2, isSigned => 0, factor => 1, unit => "uW/m2"}, 
 	0x17 => {name => "UVI", 						size => 1, isSigned => 0, factor => 1, unit => "0-15 index"},
-	0x18 => {name => "Date and time",				size => 6, isSigned => 0, factor => 1, unit => "-"},
-	0x19 => {name => "Day max wind", 				size => 2, isSigned => 0, factor => 1, unit => "m/s"}, 
-	0x1A => {name => "CH1 Temperature",				size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x1B => {name => "CH2 Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x1C => {name => "CH3 Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x1D => {name => "CH4 Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x1E => {name => "CH5 Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x1F => {name => "CH6 Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x20 => {name => "CH7 Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x21 => {name => "CH8 Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x22 => {name => "CH1 Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x23 => {name => "CH2 Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x24 => {name => "CH3 Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x25 => {name => "CH4 Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x26 => {name => "CH5 Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x27 => {name => "CH6 Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x28 => {name => "CH7 Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x29 => {name => "CH8 Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x2A => {name => "PM2.5 Air Quality Sensor",	size => 2, isSigned => 0, factor => 1, unit => "μg/m3"},  
-	0x2B => {name => "Soil Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x2C => {name => "Soil Moisture", 				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x2D => {name => "Soil Temperature 1", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x2E => {name => "Soil Moisture 1",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x2F => {name => "Soil Temperature 2", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x30 => {name => "Soil Moisture 2",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x31 => {name => "Soil Temperature 3", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x32 => {name => "Soil Moisture 3",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x33 => {name => "Soil Temperature 4", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x34 => {name => "Soil Moisture 4",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x35 => {name => "Soil Temperature 5", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x36 => {name => "Soil Moisture 5",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x37 => {name => "Soil Temperature 6", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x38 => {name => "Soil Moisture 6", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x39 => {name => "Soil Temperature 7", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x3A => {name => "Soil Moisture 7",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x3B => {name => "Soil Temperature 8", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x3C => {name => "Soil Moisture 8",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x3D => {name => "Soil Temperature 9", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x3E => {name => "Soil Moisture 9",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x3F => {name => "Soil Temperature 10",			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x40 => {name => "Soil Moisture 10",			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x41 => {name => "Soil Temperature 11",			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x42 => {name => "Soil Moisture 11",			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x43 => {name => "Soil Temperature 12",			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x44 => {name => "Soil Moisture 12", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x45 => {name => "Soil Temperature 13",			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x46 => {name => "Soil Moisture 13",  			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x47 => {name => "Soil Temperature 14",			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x48 => {name => "Soil Moisture 14",			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x49 => {name => "Soil Temperature 15", 		size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x4A => {name => "Soil Moisture 15",			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x4C => {name => "All sensor lowbatt", 			size => 16, isSigned => 0, factor => 1, unit => "-"}, 
-	0x4D => {name => "pm25 24HAVG1", 				size => 2, isSigned => 0, factor => 1, unit => "-"}, 
-	0x4E => {name => "pm25 24HAVG2", 				size => 2, isSigned => 0, factor => 1, unit => "-"}, 
-	0x4F => {name => "pm25 24HAVG3", 				size => 2, isSigned => 0, factor => 1, unit => "-"}, 
-	0x50 => {name => "pm25 24HAVG4", 				size => 2, isSigned => 0, factor => 1, unit => "-"}, 
-	0x51 => {name => "PM2.5 Air Quality Sensor 2", 	size => 2, isSigned => 0, factor => 1, unit => "-"}, 
-	0x52 => {name => "PM2.5 Air Quality Sensor 3", 	size => 2, isSigned => 0, factor => 1, unit => "-"}, 
-	0x53 => {name => "PM2.5 Air Quality Sensor 4", 	size => 2, isSigned => 0, factor => 1, unit => "-"}, 
+	0x18 => {name => "Date_and_time",				size => 6, isSigned => 0, factor => 1, unit => "-"},
+	0x19 => {name => "Day_max_wind", 				size => 2, isSigned => 0, factor => 1, unit => "m/s"}, 
+	0x1A => {name => "CH1_Temperature",				size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x1B => {name => "CH2_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x1C => {name => "CH3_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x1D => {name => "CH4_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x1E => {name => "CH5_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x1F => {name => "CH6_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x20 => {name => "CH7_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x21 => {name => "CH8_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x22 => {name => "CH1_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
+	0x23 => {name => "CH2_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
+	0x24 => {name => "CH3_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
+	0x25 => {name => "CH4_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
+	0x26 => {name => "CH5_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
+	0x27 => {name => "CH6_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
+	0x28 => {name => "CH7_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
+	0x29 => {name => "CH8_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
+	0x2A => {name => "PM2.5_Air_Quality_Sensor",	size => 2, isSigned => 0, factor => 1, unit => "μg/m3"},  
+	0x2B => {name => "Soil_Temperature_1", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x2C => {name => "Soil_Moisture_1", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x2D => {name => "Soil_Temperature_2", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x2E => {name => "Soil_Moisture_2",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x2F => {name => "Soil_Temperature_3", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x30 => {name => "Soil_Moisture_3",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x31 => {name => "Soil_Temperature_4", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x32 => {name => "Soil_Moisture_4",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x33 => {name => "Soil_Temperature_5", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x34 => {name => "Soil_Moisture_5",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x35 => {name => "Soil_Temperature_6", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x36 => {name => "Soil_Moisture_6",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x37 => {name => "Soil_Temperature_7", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x38 => {name => "Soil_Moisture_7", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x39 => {name => "Soil_Temperature_8", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x3A => {name => "Soil_Moisture_8",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x3B => {name => "Soil_Temperature_9", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x3C => {name => "Soil_Moisture_9",				size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x3D => {name => "Soil_Temperature_10", 		size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x3E => {name => "Soil_Moisture_10",			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x3F => {name => "Soil_Temperature_11",			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x40 => {name => "Soil_Moisture_11",			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x41 => {name => "Soil_Temperature_12",			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x42 => {name => "Soil_Moisture_12",			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x43 => {name => "Soil_Temperature_13",			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x44 => {name => "Soil_Moisture_13", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x45 => {name => "Soil_Temperature_14",			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x46 => {name => "Soil_Moisture_14",  			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x47 => {name => "Soil_Temperature_15",			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x48 => {name => "Soil_Moisture_15",			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x49 => {name => "Soil_Temperature_16", 		size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x4A => {name => "Soil_Moisture_16",			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x4C => {name => "All_sensor_lowbatt", 			size => 16, isSigned => 0, factor => 1, unit => "-"}, 
+	0x4D => {name => "pm25_24HAVG1", 				size => 2, isSigned => 0, factor => 1, unit => "-"}, 
+	0x4E => {name => "pm25_24HAVG2", 				size => 2, isSigned => 0, factor => 1, unit => "-"}, 
+	0x4F => {name => "pm25_24HAVG3", 				size => 2, isSigned => 0, factor => 1, unit => "-"}, 
+	0x50 => {name => "pm25_24HAVG4", 				size => 2, isSigned => 0, factor => 1, unit => "-"}, 
+	0x51 => {name => "PM2.5_Air_Quality_Sensor_2", 	size => 2, isSigned => 0, factor => 1, unit => "-"}, 
+	0x52 => {name => "PM2.5_Air_Quality_Sensor_3", 	size => 2, isSigned => 0, factor => 1, unit => "-"}, 
+	0x53 => {name => "PM2.5_Air_Quality_Sensor_4", 	size => 2, isSigned => 0, factor => 1, unit => "-"}, 
 	0x58 => {name => "Leak_ch1", 					size => 1, isSigned => 0, factor => 1, unit => "-"}, 
 	0x59 => {name => "Leak_ch2", 					size => 1, isSigned => 0, factor => 1, unit => "-"}, 
 	0x5A => {name => "Leak_ch3", 					size => 1, isSigned => 0, factor => 1, unit => "-"}, 
 	0x5B => {name => "Leak_ch4", 					size => 1, isSigned => 0, factor => 1, unit => "-"}, 
-	0x60 => {name => "lightning distance", 			size => 1, isSigned => 0, factor => 1, unit => "1~40km"},  
-	0x61 => {name => "lightning happened time", 	size => 4, isSigned => 0, factor => 1, unit => "UTC"}, 
-	0x62 => {name => "lightning counter for the day", size => 4, isSigned => 0, factor => 1, unit => "-"}, 
+	0x60 => {name => "lightning_distance", 			size => 1, isSigned => 0, factor => 1, unit => "1~40km"},  
+	0x61 => {name => "lightning_happened_time", 	size => 4, isSigned => 0, factor => 1, unit => "UTC"}, 
+	0x62 => {name => "lightning_counter_for_the_day", size => 4, isSigned => 0, factor => 1, unit => "-"}, 
 	
-	0x63 => {name => "TF USR Temperature 1", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
-	0x64 => {name => "TF USR Temperature 2", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
-	0x65 => {name => "TF USR Temperature 3", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
-	0x66 => {name => "TF USR Temperature 4", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
-	0x67 => {name => "TF USR Temperature 5", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
-	0x68 => {name => "TF USR Temperature 6", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
-	0x69 => {name => "TF USR Temperature 7", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
-	0x6A => {name => "TF USR Temperature 8", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
+	0x63 => {name => "TF_USR_Temperature_1", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
+	0x64 => {name => "TF_USR_Temperature_2", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
+	0x65 => {name => "TF_USR_Temperature_3", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
+	0x66 => {name => "TF_USR_Temperature_4", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
+	0x67 => {name => "TF_USR_Temperature_5", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
+	0x68 => {name => "TF_USR_Temperature_6", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
+	0x69 => {name => "TF_USR_Temperature_7", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
+	0x6A => {name => "TF_USR_Temperature_8", 		size => 4, isSigned => 0, factor => 1, unit => "°C"},
 	
-	0x72 => {name => "Leaf Wetness 1", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
-	0x73 => {name => "Leaf Wetness 2", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
-	0x74 => {name => "Leaf Wetness 3", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
-	0x75 => {name => "Leaf Wetness 4", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
-	0x76 => {name => "Leaf Wetness 5", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
-	0x77 => {name => "Leaf Wetness 6", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
-	0x78 => {name => "Leaf Wetness 7", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
-	0x79 => {name => "Leaf Wetness 8", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
+	0x72 => {name => "Leaf_Wetness_1", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
+	0x73 => {name => "Leaf_Wetness_2", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
+	0x74 => {name => "Leaf_Wetness_3", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
+	0x75 => {name => "Leaf_Wetness_4", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
+	0x76 => {name => "Leaf_Wetness_5", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
+	0x77 => {name => "Leaf_Wetness_6", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
+	0x78 => {name => "Leaf_Wetness_7", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
+	0x79 => {name => "Leaf_Wetness_8", 				size => 1, isSigned => 0, factor => 1, unit => "-"},
+	
+	#added in API version 1.6.4
+	0x7A => {name => "Unknown_0x7A",				size => 1, isSigned => 0, factor => 1, unit => "-"},
+	0x80 => {name => "Piezo_Rain_Rate",				size => 2, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x81 => {name => "Piezo_Event_Rain",			size => 2, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x82 => {name => "Piezo_Hourly_Rain",			size => 2, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x83 => {name => "Piezo_Daily_Rain",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x84 => {name => "Piezo_Weekly_Rain",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x85 => {name => "Piezo_Monthly_Rain",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x86 => {name => "Piezo_Yearly_Rain",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x87 => {name => "Piezo_Gain10",                size => 20, isSigned => 0, factor => 1, unit => "-"},
+	0x88 => {name => "Piezo_Reset_RainTime",        size => 3, isSigned => 0, factor => 1, unit => "-"},
 );
 
 use constant {
+	Battery_Binary => 0,
+	Battery_ByteVal => 1,
+};
+
+my %GW1000_SensorID = (
+	0x00 => {name => "WH65", 			  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x01 => {name => "WH68", 			  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x02 => {name => "unknown_02", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x03 => {name => "unknown_03", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x04 => {name => "unknown_04", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x05 => {name => "unknown_05", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x06 => {name => "unknown_06", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x07 => {name => "unknown_07", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x08 => {name => "unknown_08", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x09 => {name => "unknown_09", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x0A => {name => "unknown_0A", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x0B => {name => "unknown_0B", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x0C => {name => "unknown_0C", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x0D => {name => "unknown_0D", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x0E => {name => "Soil_moisture_1",	  size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
+	0x0F => {name => "Soil_moisture_2",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
+	0x10 => {name => "Soil_moisture_3",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
+	0x11 => {name => "Soil_moisture_4",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
+	0x12 => {name => "Soil_moisture_5",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
+	0x13 => {name => "Soil_moisture_6",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
+	0x14 => {name => "Soil_moisture_7",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
+	0x15 => {name => "Soil_moisture_8",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
+	0x16 => {name => "unknown_16", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x17 => {name => "unknown_17", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x18 => {name => "unknown_18", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x19 => {name => "unknown_19", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x1A => {name => "unknown_1A", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x1B => {name => "unknown_1B", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x1C => {name => "unknown_1C", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x1D => {name => "unknown_1D", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x1E => {name => "unknown_1E", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x1F => {name => "unknown_1F", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x20 => {name => "unknown_20", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x21 => {name => "unknown_21", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x22 => {name => "unknown_22", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x23 => {name => "unknown_23", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x24 => {name => "unknown_24", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x25 => {name => "unknown_25", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x26 => {name => "unknown_26", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x27 => {name => "unknown_27", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x28 => {name => "unknown_28", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x29 => {name => "unknown_29", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x2A => {name => "unknown_2A", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x2B => {name => "unknown_2B", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x2C => {name => "unknown_2C", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x2D => {name => "unknown_2D", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x2E => {name => "unknown_2E", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x2F => {name => "unknown_2F", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x30 => {name => "WS90",              size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.02 },
+);
+use constant {
 	GW1000_TCP_STATE_NONE               => 0,
-    GW1000_TCP_STATE_QUERY_APP          => 1,
+    GW1000_TCP_STATE_STARTINIT          => 1,
+    GW1000_TCP_STATE_QUERY_APP			=> 2,
+    GW1000_TCP_STATE_IDLE               => 4,
+    GW1000_TCP_STATE_UPDATE             => 3,
 	GW1000_TCP_STATE_RUNNING            => 99,
 	GW1000_TCP_STATE_UNSUPPORTED_FW		=> 299,	
-	GW1000_TCP_CMD_TIMEOUT              => 3,
+	GW1000_TCP_CMD_TIMEOUT              => 1,
 	GW1000_TCP_CMD_RETRY_CNT            => 3,
+	GW1000_TCP_UPD_INTERVAL				=> 60,
 };
 
 my @GW1000_header = (0xff, 0xff);
 
 my %attributeMap = (
+    commandTimeout => 'commandTimeout',
 	connectTimeout => 'connectTimeout',
 	updateIntervall => 'updateIntervall',
 );
@@ -217,10 +290,8 @@ sub GW1000_TCP_Initialize($) {
 
     #TODO fill AttrList from %attributeMap
     $hash->{AttrList} =
-          "lircd_codes:textField-long "
-        . join(' ', values %attributeMap). " "   #add attributes from %attributeMap
+        join(' ', values %attributeMap). " "   #add attributes from %attributeMap
         . $readingFnAttributes;
-
 }
 sub GW1000_TCP_InitConnection($);
 sub GW1000_TCP_Connect($$);
@@ -238,7 +309,7 @@ sub GW1000_TCP_Define($$) {
 	#$hash->{DevType} = 'LGW';
 	#read defines
 	if(int(@param) < 3) {
-		return "too few parameters: define <name> GW1000_TCP <IP> <Port>";
+		return "too few parameters: define <name> GW1000_TCP <IP> [<Port>]";
 	}
 
 	$hash->{name}  = $param[0];
@@ -335,19 +406,28 @@ sub GW1000_TCP_Set($@) {
 	} else {
 		return "Unknown argument ${cmd}, choose one of " .
 		    join(" ",map {"$_" . ($sets{$_} ? ":$sets{$_}" : "")} keys %sets);
+		    
 	}
 	Log3 $name, 5, "GW1000_TCP_Set() End.";  
 	return undef;
 }
 
 sub GW1000_TCP_Attr(@) {
-	my ($cmd,$name,$attr_name,$attr_value) = @_;
+	my ($cmd, $name, $aName, $aVal) = @_;
 	my $hash = $defs{$name};
 
-	if($cmd eq "set") {
-		if($attr_name eq "lircd_codes") {
+	my $retVal;
+
+	Log3($hash, 5, "GW1000_TCP ${name} Attr ${cmd} ${aName} ".(($aVal)?$aVal:""));
+
+	if ($aName eq "verbose") {
+		if ($hash->{keepAlive}) {
+			if ($cmd eq "set") {
+				$attr{$hash->{keepAlive}->{NAME}}{$aName} = $aVal;
+			} else {
+				delete $attr{$hash->{keepAlive}->{NAME}}{$aName};
+			}
 		}
-		#TODO handle all attributes from attrMap
 	}
 	return undef;
 }
@@ -378,19 +458,34 @@ sub GW1000_TCP_GetUpdate($)
 {
 	my ($hash) = @_;
 	my $name = $hash->{NAME};
-	Log3 $name, 2, "GW1000_TCP: GetUpdate called ...";
-	
-	#my ($cmd, @data) = requestData($hash, $GW1000_cmdMap{CMD_READ_STATION_MAC}, 0);
-	#updateData($hash, $cmd, @data );
+	Log3 $name,  5, "GW1000_TCP_GetUpdate() Start.  updateCmd:" . $hash->{UpdateCmd};  
 
-	#($cmd, @data) = requestData($hash, $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}, 0);
-	#updateData($hash, $cmd, @data );
+	if ($hash->{UpdateCmd} == "0") {
+		$hash->{UpdateCmd} = "$GW1000_cmdMap{CMD_READ_SENSOR_ID_NEW}";
+		$hash->{DevState} = GW1000_TCP_STATE_UPDATE;
+#		GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_READ_RAINDATA}, 0);
+		GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_READ_SENSOR_ID_NEW}, 0);
+		GW1000_TCP_updateCondition($hash);
+	} elsif ($hash->{UpdateCmd} == "$GW1000_cmdMap{CMD_READ_SENSOR_ID_NEW}") {
 	
-	GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_GW1000_LIVEDATA}, 0);
-	#updateData($hash, $cmd, @data );
-		
-	# start new timer.
-	InternalTimer(gettimeofday()+AttrVal($name, "updateIntervall", 16), "GW1000_TCP_GetUpdate", $hash);
+		#my ($cmd, @data) = requestData($hash, $GW1000_cmdMap{CMD_READ_STATION_MAC}, 0);
+		#updateData($hash, $cmd, @data );
+
+		#($cmd, @data) = requestData($hash, $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}, 0);
+		#updateData($hash, $cmd, @data );
+		$hash->{UpdateCmd} = "$GW1000_cmdMap{CMD_GW1000_LIVEDATA}";
+		GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_GW1000_LIVEDATA}, 0);
+		#updateData($hash, $cmd, @data );
+	} elsif ($hash->{UpdateCmd} == "$GW1000_cmdMap{CMD_GW1000_LIVEDATA}") {
+		$hash->{UpdateCmd} = "$GW1000_cmdMap{CMD_READ_RSTRAIN_TIME}";
+		GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_READ_RSTRAIN_TIME}, 0);
+		$hash->{UpdateCmd} = "08154711";
+	} else {	
+		$hash->{DevState} = GW1000_TCP_STATE_IDLE;
+		$hash->{UpdateCmd} = "0";
+		# start new timer.
+		InternalTimer(gettimeofday() + AttrVal($name, "updateIntervall", GW1000_TCP_UPD_INTERVAL), "GW1000_TCP_GetUpdate", $hash);
+	}
 	Log3 $name, 5, "GW1000_TCP_GetUpdate() End.";  
 }
 
@@ -456,6 +551,24 @@ sub GW1000_TCP_Reopen($;$)
 	return DevIo_OpenDev($hash, 1, "GW1000_TCP_DoInit", \&GW1000_TCP_Connect);
 }
 
+sub GW1000_TCP_Restart($;$)
+{
+	my ($hash, $noclose) = @_;
+	my $name = $hash->{NAME};
+	Log3($hash, 5, "GW1000_TCP ${name} start");
+		
+	RemoveInternalTimer($hash, "GW1000_TCP_GetUpdate");
+	
+	$hash->{DevState} = GW1000_TCP_STATE_QUERY_APP;
+	GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_WRITE_REBOOT}, 0);
+	GW1000_TCP_updateCondition($hash);
+	
+	GW1000_TCP_Undef($hash, $name, $noclose);
+#CMD_WRITE_REBOOT
+  	Log3 $hash, 5, "GW1000_TCP_Restart() End.";  
+	return DevIo_OpenDev($hash, 1, "GW1000_TCP_DoInit", \&GW1000_TCP_Connect);
+}
+
 sub GW1000_TCP_DoInit($)
 {
 	my ($hash) = @_;
@@ -471,13 +584,13 @@ sub GW1000_TCP_DoInit($)
 	$hash->{XmitOpen} = 0;
 	$hash->{LastOpen} = gettimeofday();
 
-	#$hash->{LGW_Init} = if ($hash->{DevType} =~ m/^LGW/);
+	$hash->{LGW_Init} = 1; #if ($hash->{DevType} =~ m/^LGW/);
 
 	$hash->{Helper}{Log}{IDs} = [ split(/,/, AttrVal($name, "logIDs", "")) ];
 	$hash->{Helper}{Log}{Resolve} = 1;
 
 	RemoveInternalTimer($hash);
-
+	$hash->{StartInitCmd} = "0";
 	InternalTimer(gettimeofday()+1, "GW1000_TCP_StartInit", $hash, 0);
   	Log3 $name, 5, "GW1000_TCP_DoInit() end.";  
 	return;
@@ -493,15 +606,29 @@ sub GW1000_TCP_StartInit($)
 	RemoveInternalTimer($hash);
 
 	#InternalTimer(gettimeofday()+GW1000_TCP_CMD_TIMEOUT, "GW1000_TCP_CheckCmdResp", $hash, 0);
-
-	$hash->{DevState} = GW1000_TCP_STATE_QUERY_APP;
-	GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_READ_STATION_MAC}, 0);
-	GW1000_TCP_updateCondition($hash);
-
-	GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}, 0);
-	GW1000_TCP_updateCondition($hash);
-
-	InternalTimer(gettimeofday()+2, "GW1000_TCP_GetUpdate", $hash, 0);
+	if ($hash->{StartInitCmd} == "0") 
+	{
+		$hash->{StartInitCmd} = "$GW1000_cmdMap{CMD_READ_SSSS}";
+		$hash->{DevState} = GW1000_TCP_STATE_STARTINIT;
+		GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_READ_SSSS}, 0);
+		GW1000_TCP_updateCondition($hash);
+	} elsif ($hash->{StartInitCmd} == "$GW1000_cmdMap{CMD_READ_SSSS}") 
+	{
+		$hash->{StartInitCmd} = "$GW1000_cmdMap{CMD_READ_STATION_MAC}";
+		GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_READ_STATION_MAC}, 0);
+		GW1000_TCP_updateCondition($hash);
+    } elsif($hash->{StartInitCmd} == "$GW1000_cmdMap{CMD_READ_STATION_MAC}")
+    {
+    	$hash->{StartInitCmd} = "$GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}";
+		GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}, 0);
+		GW1000_TCP_updateCondition($hash);
+    } else
+    {
+		$hash->{DevState} = GW1000_TCP_STATE_QUERY_APP;
+  		#InternalTimer(gettimeofday() + AttrVal($name, "commandTimeout", GW1000_TCP_CMD_TIMEOUT), "GW1000_TCP_GetUpdate", $hash, 0);
+  		$hash->{UpdateCmd} = "0";
+  		GW1000_TCP_GetUpdate($hash);
+    }
 	return;
 }
 
@@ -566,15 +693,15 @@ sub GW1000_TCP_updateCondition($)
 		$loadLvl = "suspended";
 	}
 
-	if ((defined($cond) && $cond ne ReadingsVal($name, "cond", "")) ||
-	    (defined($loadLvl) && $loadLvl ne ReadingsVal($name, "loadLvl", ""))) {
-		readingsBeginUpdate($hash);
-		readingsBulkUpdate($hash, "cond", $cond)
-			if (defined($cond) && $cond ne ReadingsVal($name, "cond", ""));
-		readingsBulkUpdate($hash, "loadLvl", $loadLvl)
-			if (defined($loadLvl) && $loadLvl ne ReadingsVal($name, "loadLvl", ""));
-		readingsEndUpdate($hash, 1);
-	}
+#	if ((defined($cond) && $cond ne ReadingsVal($name, "cond", "")) ||
+#	    (defined($loadLvl) && $loadLvl ne ReadingsVal($name, "loadLvl", ""))) {
+#		readingsBeginUpdate($hash);
+#		readingsBulkUpdate($hash, "cond", $cond)
+#			if (defined($cond) && $cond ne ReadingsVal($name, "cond", ""));
+#		readingsBulkUpdate($hash, "loadLvl", $loadLvl)
+#			if (defined($loadLvl) && $loadLvl ne ReadingsVal($name, "loadLvl", ""));
+#		readingsEndUpdate($hash, 1);
+#	}
 }
 
 sub GW1000_TCP_send_frame($$@) 
@@ -582,7 +709,7 @@ sub GW1000_TCP_send_frame($$@)
 	my ($hash, $cmd, @data) = @_;
 	my $name = $hash->{NAME};
 
-	Log3 $hash, 5, "GW1000_TCP_send_frame start.";
+	Log3 $hash, 5, "GW1000_TCP_send_frame start. cmd: $cmd";
 
 	# data to send to a server
 	my @packet;
@@ -597,6 +724,7 @@ sub GW1000_TCP_send_frame($$@)
 
 	my $sendtime = scalar(gettimeofday());
 	DevIo_SimpleWrite($hash, $req, 0);
+	Log3 $hash, 2, "GW1000_TCP_send_frame write raw (".length($req)."): ".unpack("H*", $req);
 
 	$sendtime;
 }
@@ -638,7 +766,6 @@ sub GW1000_TCP_CheckCmdResp($)
 			InternalTimer(gettimeofday()+GW1000_TCP_CMD_TIMEOUT, "GW1000_TCP_CheckCmdResp", $hash, 0);
 		}
 	}
-
 	return;
 }
 
@@ -652,16 +779,16 @@ sub GW1000_TCP_Read($)
 	return "" if (!defined($buf));
 
 	my $err = "";
-	#$buf = HMUARTLGW_decrypt($hash, $buf) if ($hash->{'.crypto'});
+	#$buf = GW1000_TCP_decrypt($hash, $buf) if ($hash->{'.crypto'});
 
-	Log3($hash, 5, "HMUARTLGW ${name} read raw (".length($buf)."): ".unpack("H*", $buf));
+	Log3($hash, 5, "GW1000_TCP ${name} read raw (".length($buf)."): ".unpack("H*", $buf));
 
 	my $p = pack("H*", $hash->{PARTIAL}) . $buf;
 	$hash->{PARTIAL} .= unpack("H*", $buf);
 
-	#return HMUARTLGW_LGW_Init($hash) if ($hash->{LGW_Init});
+	#return GW1000_TCP_LGW_Init($hash) if ($hash->{LGW_Init});
 
-	#return HMUARTLGW_LGW_HandleKeepAlive($hash) if ($hash->{DevType} eq "LGW-KeepAlive");
+	#return GW1000_TCP_LGW_HandleKeepAlive($hash) if ($hash->{DevType} eq "LGW-KeepAlive");
 
 	#need at least one frame delimiter
 	#return if (!($p =~ m/\xfd/));
@@ -684,7 +811,7 @@ sub GW1000_TCP_Read($)
 	my $response_cmd = shift(@response);
 	my $response_size = 0;
 	my $sizeOfsize = 0;
-	if ($response_cmd == $GW1000_cmdMap{CMD_BROADCAST} || $response_cmd == $GW1000_cmdMap{CMD_GW1000_LIVEDATA}) {
+	if ($response_cmd == $GW1000_cmdMap{CMD_BROADCAST} || $response_cmd == $GW1000_cmdMap{CMD_GW1000_LIVEDATA} || $response_cmd == $GW1000_cmdMap{CMD_READ_SENSOR_ID_NEW} || $response_cmd == $GW1000_cmdMap{CMD_READ_RSTRAIN_TIME} ) {
 		# size is 2 byte
 		$response_size = shift(@response) * 256 + shift(@response);
 		$sizeOfsize = 2;
@@ -746,112 +873,6 @@ sub GW1000_TCP_Read($)
 }
 
 ##aux functions
-sub requestData($$@) {
-	my ($hash, $cmd, @data) = @_;
-	my $name = $hash->{name};
-	
-	my $err = "";
-	
-	# create a connecting socket
-	my $socket = new IO::Socket::INET (
-    	PeerHost => $hash->{I_GW1000_IP},
-    	PeerPort => $hash->{I_GW1000_Port},
-    	Proto => 'tcp',
-		Timeout => AttrVal($name, "connectTimeout", 1),
-	);
-	
-	if($socket) {
-    	$hash->{STATE} = "Connected";
-    	Log3 $name, 2, "GW1000_TCP <$hash->{name}>: connected to server ($hash->{I_GW1000_IP}:$hash->{I_GW1000_Port})" ;
-
-  	} else {
-		$hash->{STATE} = "Disconnected";
-		Log3 $name, 1, "GW1000_TCP <$hash->{name}>: connection failed to server ($hash->{I_GW1000_IP}:$hash->{I_GW1000_Port})";
-		return 0;
-	}	
-	
-	$socket->autoflush(1);
-
-	# data to send to a server
-	my @packet;
-	push(@packet, @GW1000_header);
-	push(@packet, $cmd);
-	push(@packet, scalar(@data) + 3);
-	push(@packet, @data);
-	push(@packet, sum(@packet) - sum(@GW1000_header));
-	
-	my $req = pack('C*', @packet);
-
-	my $size = $socket->send($req);
-	Log3 $name, 3, "GW1000_TCP <$hash->{name}>: sent data (size: $size):" . unpack('H*', $req);
-
-	# notify server that request has been sent
-	shutdown($socket, 1);
-
-	# receive a response of up to 1024 characters from server
-	my $response_string = "";
-	$socket->recv($response_string, 1024);
-	my @response = unpack('(C)*', $response_string);
-	Log3 $name, 4, "GW1000_TCP <$hash->{name}>: received response: " . unpack('H*', $response_string) . " (@response)";
-
-	$socket->close();
-	
-	# unpack response
-	my @response_header = (shift(@response), shift(@response));
-	my $response_cmd = shift(@response);
-	my $response_size = 0;
-	my $sizeOfsize = 0;
-	if ($response_cmd == $GW1000_cmdMap{CMD_BROADCAST} || $response_cmd == $GW1000_cmdMap{CMD_GW1000_LIVEDATA}) {
-		# size is 2 byte
-		$response_size = shift(@response) * 256 + shift(@response);
-		$sizeOfsize = 2;
-	} else {
-		# size is 1 byte
-		$response_size = shift(@response);
-		$sizeOfsize = 1;
-	}
-	
-	my $response_cs = pop(@response);
-	my @response_data = @response;
-	
-	$err = sprintf("HEADER: 0x%x 0x%x; CMD: 0x%x; SIZE: $response_size; CHECKSUM: $response_cs; DATA: @response_data", $response_header[0], $response_header[1], $response_cmd);
-	Log3 $name, 4, "GW1000_TCP <$hash->{name}>: $err";
-	
-	#check fixed header = 0xffff
-	if ($response_header[0] != 0xff || $response_header[1] != 0xff) {
-		$err = sprintf("ERROR: fixed header is 0x%x 0x%x ! (Should be '0xff 0xff')", $response_header[0], $response_header[1]);
-		Log3  $name,1, "GW1000_TCP <$hash->{name}>: $err";
-		return;
-	};
-	
-	#check cmd is same as requested
-	if ($response_cmd != $cmd) {
-		$err = sprintf("ERROR: receved not requested dataset (requested: 0x%x; received: 0x%x)", $cmd, $response_cmd);
-		Log3 $name, 1, "GW1000_TCP <$hash->{name}>: $err";
-		return;
-	};
-	
-	#check size (SIZE: 1 byte, packet size，counted from CMD till CHECKSUM)
-	## REMARK some packages have size/2
-	my $size_calc = scalar(@response_data) + 2 + $sizeOfsize;
-	if ($response_size != $size_calc) {
-		$err = sprintf("ERROR: response size is not equal to size reported in response (reported: $response_size; actual: $size_calc)");
-		Log3 $name, 1, "GW1000_TCP <$hash->{name}>: $err";
-		return;
-	};
-	
-	
-	#check checksum (CHECKSUM: 1 byte, CHECKSUM=CMD+SIZE+DATA1+DATA2+...+DATAn)
-	###DISABLE checksum test, sinceits not clear how it is calculated
-	#my $cs_calc = ($response_cmd + $response_size + sum(@response_data)) % 255;
-	#if ($response_cs != $cs_calc) {
-	#	$err = sprintf("ERROR: response checksum is not equal to chescksum reported in response (reported: $response_cs; actual: $cs_calc)");
-	#	Log 1, "GW1000_TCP <$hash->{name}>: $err";
-	#	return;
-	#};
-
-	return $response_cmd, @response_data;
-}
 
 sub updateData($$@) {
 	my ($hash, $cmd, @data) = @_;
@@ -860,7 +881,7 @@ sub updateData($$@) {
 	my $msg = "";
 	
 	$msg = sprintf("Received %s (0x%x). Unpacking data...",  $GW1000_cmdMap_reversed{$cmd}, $cmd);	
-	Log3($name, 2, "GW1000_TCP: $msg"); 
+	Log3($name, 5, "GW1000_TCP: $msg"); 
 	
 	if ($cmd == $GW1000_cmdMap{CMD_READ_STATION_MAC}) {
 		
@@ -870,6 +891,132 @@ sub updateData($$@) {
 		shift(@data);
 		my $x = join '', map chr, @data;
 		readingsSingleUpdate($hash, "Firmware Version", sprintf("%s" , $x), 1 );
+	}
+	elsif ($cmd == $GW1000_cmdMap{CMD_READ_SSSS}) {
+		my $rfFrequency = "";
+		my $readingsName = "WirelessReceiveFrequency";
+		my $valueItem = shift(@data);
+		if ($valueItem == 0) {
+				$rfFrequency = "433MHz";
+		}  elsif ($valueItem == 1) {
+				$rfFrequency = "868MHz";
+		} elsif ($valueItem == 2) {
+				$rfFrequency = "915MHz";
+		} elsif ($valueItem == 3) {
+				$rfFrequency = "920MHz";
+		} else {
+				$rfFrequency = "unknown value";
+		}
+		readingsSingleUpdate($hash, $readingsName, $rfFrequency, 1 );
+		Log3 $name, 5, "GW1000_TCP : " . $readingsName . " : " . $rfFrequency;
+		
+		my $sensorType = "";
+		$readingsName = "SensorType";
+		$valueItem = shift(@data);
+		if ($valueItem == 0) {
+			$sensorType = "WH24";
+		}  elsif ($valueItem == 1) {
+			$sensorType = "WH65";
+		} else {
+			$sensorType = "unknown value";
+		}
+		readingsSingleUpdate($hash, $readingsName, $sensorType, 1 );
+		Log3 $name, 5, "GW1000_TCP : " . $readingsName . " : " . $sensorType;
+		# we skip 4Bytes UTC Time
+		$valueItem = shift(@data);
+		$valueItem = shift(@data);
+		$valueItem = shift(@data);
+		$valueItem = shift(@data);
+	
+		# we skip 1Bytes Timezone Index
+		$valueItem = shift(@data);
+		
+		my $dstStatus = "";
+		$readingsName = "DST status";
+		$valueItem = shift(@data);
+		if ($valueItem == 1) {
+			$dstStatus = "ON";
+		} elsif ($valueItem == 0) {
+			$dstStatus = "OFF";
+		} else {
+			$sensorType = "unknown value";
+		}
+		readingsSingleUpdate($hash, $readingsName, $dstStatus, 1 );
+		Log3 $name, 5, "GW1000_TCP : " . $readingsName . " : " . $dstStatus;
+	}
+	elsif ($cmd == $GW1000_cmdMap{CMD_READ_SENSOR_ID_NEW}) {
+		$msg = sprintf("updateData() $cmd(%s)",   $cmd);	
+	    Log3 $name, 5, $msg;
+	
+		readingsBeginUpdate($hash);
+		
+		my $dataLength = @data;
+		my $item = shift(@data);
+		$msg = sprintf("updateData() cmd: (%s) item: %x  Length:%s",   $cmd, $item, $dataLength);		
+	    Log3 $name, 5, $msg;
+		while ($dataLength > 0) {
+			#$msg = sprintf("updateData() $item(%s) : (0x%x)",  $GW1000_SensorID{$item}{name}, $item);	
+		    #Log3 $name, 5, $msg;
+			if (exists($GW1000_SensorID{$item})) {
+				my $value = 0;
+				for (my $i = $GW1000_SensorID{$item}{size} - 1; $i >= 0; $i--) {
+					$value += shift(@data) * 2**(8*$i);
+				}
+				if ( $GW1000_SensorID{$item}{isSigned}) {
+					if    ($GW1000_SensorID{$item}{size} == 1) {$value = unpack('c', pack('C', $value));}
+					elsif ($GW1000_SensorID{$item}{size} == 2) {$value = unpack('s', pack('S', $value));}
+					elsif ($GW1000_SensorID{$item}{size} == 4) {$value = unpack('q', pack('Q', $value));}
+					else {
+						$msg = sprintf("ERROR: Received %s (0x%x) but don't know how to convert value of size %d to signed integer. Skipping...", $GW1000_SensorID{$item}{name}, $item, $GW1000_SensorID{$item}{size});	
+						Log3 $name, 1, "GW1000_TCP: $msg"; 
+					}
+				}
+			 	my $batteryValue = shift(@data);
+			 	my $receiveValue = shift(@data);
+				#$value *= $GW1000_Items{$item}{factor};
+				if ($value != 0xFFFFFFFF && $value != 0xFFFFFFFE)
+				{
+					if ($GW1000_SensorID{$item}{batteryType} == Battery_ByteVal)
+					{
+						$msg = sprintf("battery: %x", $batteryValue);
+						#$batteryValue = unpack('c', pack('C', $batteryValue));
+						$msg = sprintf("%s unpacked: %s", $msg , $batteryValue);
+						if (($GW1000_SensorID{$item}{Battery_Scaling} == 0.1) && ($batteryValue == 0x1F))
+						{	
+							$batteryValue = "0.0";
+						}
+						else
+						{
+							$batteryValue *= $GW1000_SensorID{$item}{Battery_Scaling};
+						}
+						$msg = sprintf("%s scaled: %s", $msg , $batteryValue);
+						Log3 $name, 5, "GW1000_TCP: $msg"; 
+					}
+					$msg = sprintf("Received %s (0x%2.0x) = %08.0x bat:%2.1f  recv:0x%x",  $GW1000_SensorID{$item}{name}, $item, $value, $batteryValue, $receiveValue);	
+					Log3 $name, 4, "GW1000_TCP: $msg"; 
+					readingsBulkUpdate($hash, $GW1000_SensorID{$item}{name} . "_ID", sprintf("%x", $value) );
+					readingsBulkUpdate($hash, $GW1000_SensorID{$item}{name} . "_Batterie", sprintf("%2.1f", $batteryValue) );
+					readingsBulkUpdate($hash, $GW1000_SensorID{$item}{name} . "_Signal", sprintf("%d", $receiveValue) );
+					
+				} elsif ($value != 0xFFFFFFFF)
+				{
+					$msg = sprintf("Received %s (0x%2.0x) never seen.", $GW1000_SensorID{$item}{name}, $item);	
+					Log3 $name, 5, "GW1000_TCP: $msg"; 
+				} elsif ($value != 0xFFFFFFFE)
+				{
+					$msg = sprintf("Received %s (0x%2.0x) disabled.",  $GW1000_SensorID{$item}{name}, $item);	
+					Log3 $name, 5, "GW1000_TCP: $msg";
+				}
+			} else {
+				$msg = sprintf("Item (0x%x) is unknown. Skipping complete package!", $item);
+				Log3 $name, 1, "GW1000_TCP: $msg"; 
+				readingsEndUpdate($hash, 1);
+				return 1;
+			}
+			$dataLength = @data;
+			$item = shift(@data);
+		}
+		readingsEndUpdate($hash, 1);
 	}
 	elsif ($cmd == $GW1000_cmdMap{CMD_GW1000_LIVEDATA}) {
 				
@@ -905,14 +1052,163 @@ sub updateData($$@) {
 			
 		}
 		readingsEndUpdate($hash, 1);
+		
+	}
+	elsif ($cmd == $GW1000_cmdMap{CMD_READ_RSTRAIN_TIME}) {
+				
+		readingsBeginUpdate($hash);
+		while (my $item = shift(@data)) {
+		
+			if (exists($GW1000_Items{$item})) {
+				my $value = 0;
+				for (my $i = $GW1000_Items{$item}{size} - 1; $i >= 0; $i--) {
+					$value += shift(@data) * 2**(8*$i);
+				}
+				if ( $GW1000_Items{$item}{isSigned}) {
+					if    ($GW1000_Items{$item}{size} == 1) {$value = unpack('c', pack('C', $value));}
+					elsif ($GW1000_Items{$item}{size} == 2) {$value = unpack('s', pack('S', $value));}
+					elsif ($GW1000_Items{$item}{size} == 4) {$value = unpack('q', pack('Q', $value));}
+					else {
+						$msg = sprintf("ERROR: Received %s (0x%x) but don't know how to convert value of size %d to signed integer. Skipping...", $GW1000_Items{$item}{name}, $item, $GW1000_Items{$item}{size});	
+						Log3 $name, 1, "GW1000_TCP: $msg"; 
+					}
+				}
+			 
+				$value *= $GW1000_Items{$item}{factor};
+				
+				$msg = sprintf("Received %s (0x%x) = %2.1f",  $GW1000_Items{$item}{name}, $item, $value);	
+				Log3 $name, 4, "GW1000_TCP: $msg"; 
+				if (!($item == 0x87) || ($item == 0x88))
+				{
+					readingsBulkUpdate($hash, $GW1000_Items{$item}{name}, sprintf("%2.1f", $value) );
+				}
+			} else {
+				$msg = sprintf("Item (0x%x) is unknown. Skipping complete package!", $item);
+				Log3 $name, 1, "GW1000_TCP: $msg"; 
+				readingsEndUpdate($hash, 1);
+				return 1;
+			}
+			
+		}
+		readingsEndUpdate($hash, 1);
+		
 	}
 	else {
 		Log3 $name, 1, "GW1000_TCP: Unkown data received. Skipping!"; 
 		
 	}
-	
+	if ($hash->{DevState} == GW1000_TCP_STATE_STARTINIT)
+	{
+		InternalTimer(gettimeofday() + AttrVal($name, "commandTimeout", GW1000_TCP_CMD_TIMEOUT), "GW1000_TCP_StartInit", $hash, 0);
+	} elsif ($hash->{DevState} == GW1000_TCP_STATE_UPDATE) {
+		InternalTimer(gettimeofday() + AttrVal($name, "commandTimeout", GW1000_TCP_CMD_TIMEOUT), "GW1000_TCP_GetUpdate", $hash, 0);
+	}
 	return 1;	
 }
 
 1;
+
+=pod
+=item summary    support for the ecoWitt API and Wireless LAN Gateway
+=item summary_DE Anbindung f&uuml;r das ecoWitt API und Wireless LAN Gateway
+=begin html
+
+<a name="GW1000_TCP"></a>
+<h3>GW1000_TCP</h3>
+<ul>
+  GW1000_TCP provides support for the ecoWitt API and Wireless LAN Gateway.<br>
+  <br>
+
+  <a name="GW1000_TCP_define"></a>
+  <b>Define</b>
+  <ul>
+      <code>define &lt;name&gt; GW1000_TCP &lt;device&gt;</code><br>
+      <br>
+      The &lt;device&gt;-parameter specifies the IP address or hostname
+          of the gateway, optionally followed by : and the port number
+          API-port (default when not specified: 45000).<br>
+    <br>
+    Example:<br>
+    <ul>
+       ecoWitt LAN Gateway at <code>192.168.42.23</code>:<br>
+       <code>define myGW GW1000_TCP 192.168.42.23</code><br>&nbsp;
+    </ul>
+  </ul>
+  <a name="GW1000_TCP_set"></a>
+  <p><b>Set</b></p>
+  <ul>
+    <li><i>close</i><br><ul>Closes the connection to the device.</ul></li>
+    <li><i>open</i><br><ul>Opens the connection to the device and initializes it.</ul></li>
+    <li><i>reopen</i><br><ul>Reopens the connection to the device and reinitializes it.</ul></li>
+    <li><i>restart</i><br><ul>Reboots the device.</ul></li>
+  </ul>
+  <br>
+  <a name="GW1000_TCP_attr"></a>
+  <p><b>Attributes</b></p>
+  <ul>
+    <li><i>updateIntervall</i><br><ul>Time in seconds when the next Update request is made.<br>
+        Default: 60</ul></li>
+    <li><i>connectTimeout</i><br><ul>Timeout in seconds for a connection to the LAN Gateway
+        if no response in connectTimeout seconds an repeated Connection request
+        is initiated (3 x times).<br>
+        Default: 15</ul></li>
+  </ul>
+</ul>
+
+=end html
+
+=begin html_DE
+
+<a name="GW1000_TCP"></a>
+<h3>GW1000_TCP</h3>
+<ul>
+  Das Modul GW1000_TCP bietet Unterst&uuml;tzung für die ecoWitt API erm&ouml;glicht das lokale auslesen der ecoWitt Senoren &uuml;ber ein WLAN Gateway.<br>
+
+  <br>
+
+  <a name="GW1000_TCP_define"></a>
+  <p><b>Define</b></p>
+  <ul>
+    <li><code>define &lt;name&gt; GW1000_TCP &lt;device&gt;</code><br><br>
+        Der &lt;device&gt;-Parameter gibt die IP-Adresse oder den Hostnamen 
+        des Gateways an, optional gefolgt von : und der Portnummer des
+        API-port (Standardwert wenn nicht angegeben: 45000).
+    </li>
+    <br>
+    Beispiel:<br>
+    <ul>ecoWitt LAN Gateway auf IP Adresse <code>192.168.42.23</code>:<br>
+        <code>define myGW GW1000_TCP 192.168.42.23</code><br>&nbsp;
+    </ul>
+  </ul>
+  <a name="GW1000_TCP_set"></a>
+  <p><b>Set</b></p>
+  <ul>
+    <li><i>close</i><br><ul>Schlie&szlig;t die Verbindung zum Ger&auml;t.</ul></li>
+    <li><i>open</i><br><ul>&Ouml;ffnet die Verbindung zum Ger&auml;t und initialisiert es.</ul></li>
+    <li><i>reopen</i><br><ul>Schli&szlig;t und &ouml;ffnet die Verbindung zum Ger&auml;t und re-initialisiert es.</ul></li>
+    <!-- <li><i>restart</i><br><ul>Setzt das verbundene Ger&auml;t zur&uuml;ck.</ul></li> -->
+  </ul>
+  <a name="GW1000_TCP_get"></a>
+  <!-- 
+  <p><b>Get</b></p>
+  <ul>
+    <li><i>assignIDs</i><br><ul>Gibt die aktuell diesem IO-Ger&auml;t zugeordneten ecoWitt-Ger&auml;te zur&uuml;ck.</ul></li>
+  </ul> 
+  -->
+  <br>
+  <a name="GW1000_TCP_attr"></a>
+  <p><b>Attribute</b></p>
+  <ul>
+    <li><i>updateIntervall</i><br><ul>Zeit in Sekunden, wann die nächste Update-Anfrage gestellt wird.<br>
+        Standardwert: 60</ul></li>
+    <li><i>connectTimeout</i><br><ul>Wartezeit in Sekunden für eine Verbindung zum LAN Gateway -
+        wenn keine Antwort in connectTimeout Sekunden eine wiederholte Verbindungsanfrage
+        wird initiiert (3 x mal).<br>
+        Standardwert: 15</ul></li>
+  </ul>
+</ul>
+
+=end html_DE
+
+=cut
 
