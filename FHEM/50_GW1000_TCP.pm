@@ -7,6 +7,8 @@
 # TODO:
 # - update modul documentation
 # - implement coplete API (i.e. Rainfall GW2000A-WIFI2EF + WS90)
+# - add unit to reading values
+# - add language support
 #
 package main;
 
@@ -18,8 +20,10 @@ use Time::HiRes qw(gettimeofday time);
 use Time::Local;
 use List::Util 'sum';
 
+################################################################################################################
+# API from https://osswww.ecowitt.net/uploads/20220407/WN1900%20GW1000,1100%20WH2680,2650%20telenet%20v1.6.4.pdf
+# GW1000,1100 WH2680,2650 telenet v1.6.4.pdf, page 7 - 9
 
-## API from https://osswww.ecowitt.net/uploads/20210716/WN1900%20GW1000,1100%20WH2680,2650%20telenet%20v1.6.4%20.pdf
 my %GW1000_cmdMap = (
 	CMD_WRITE_SSID 				=> 0x11,		# send SSID and Password to WIFI module
 	CMD_BROADCAST 				=> 0x12,		# UDP cast for device echo，answer back data size is 2 Bytes
@@ -68,6 +72,7 @@ my %GW1000_cmdMap = (
 );
 my %GW1000_cmdMap_reversed = reverse %GW1000_cmdMap;
 
+# GW1000,1100 WH2680,2650 telenet v1.6.4.pdf, page 7 - 9
 my %GW1000_Items = (
 	0x01 => {name => "Indoor_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
 	0x02 => {name => "Outdoor_Temperature", 		size => 2, isSigned => 1, factor => 0.1, unit => "°C"}, 
@@ -79,8 +84,8 @@ my %GW1000_Items = (
 	0x08 => {name => "Absolutely_Barometric ", 		size => 2, isSigned => 0, factor => 0.1, unit => "hpa"}, 
 	0x09 => {name => "Relative_Barometric", 		size => 2, isSigned => 0, factor => 0.1, unit => "hpa"},
 	0x0A => {name => "Wind_Direction", 				size => 2, isSigned => 0, factor => 1, unit => "360°"},
-	0x0B => {name => "Wind_Speed ", 				size => 2, isSigned => 0, factor => 1, unit => "m/s"}, 
-	0x0C => {name => "Gust_Wind_Speed", 					size => 2, isSigned => 0, factor => 1, unit => "m/s"}, 
+	0x0B => {name => "Wind_Speed ", 				size => 2, isSigned => 0, factor => 0.1, unit => "m/s"}, 
+	0x0C => {name => "Gust_Wind_Speed", 			size => 2, isSigned => 0, factor => 0.1, unit => "m/s"}, 
 	0x0D => {name => "Rain_Event", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
 	0x0E => {name => "Rain_Rate", 					size => 2, isSigned => 0, factor => 1, unit => "mm/h"},
 	0x0F => {name => "Rain_Hour ", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
@@ -191,25 +196,25 @@ my %GW1000_Items = (
 );
 
 use constant {
-	Battery_Binary => 0,
-	Battery_ByteVal => 1,
+	BATTERY_BINARY => 0,
+	BATTERY_BYTEVAL => 1,
 };
 
 my %GW1000_SensorID = (
 	0x00 => {name => "WH65", 			  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
 	0x01 => {name => "WH68", 			  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x02 => {name => "unknown_02", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x03 => {name => "unknown_03", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x04 => {name => "unknown_04", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x05 => {name => "unknown_05", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x06 => {name => "unknown_06", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x07 => {name => "unknown_07", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x08 => {name => "unknown_08", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x09 => {name => "unknown_09", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x0A => {name => "unknown_0A", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x0B => {name => "unknown_0B", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x0C => {name => "unknown_0C", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
-	0x0D => {name => "unknown_0D", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x02 => {name => "WH80",    		  size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.02 },
+	0x03 => {name => "WH40", 		  	  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x04 => {name => "WH26",    		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x05 => {name => "WH26", 			  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x06 => {name => "WH31_1", 			  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x07 => {name => "WH31_2",	 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x08 => {name => "WH31_3",	 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x09 => {name => "WH31_4", 			  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x0A => {name => "WH31_5",	 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x0B => {name => "WH31_6", 			  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x0C => {name => "WH31_7",	 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x0D => {name => "WH31_8",	 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
 	0x0E => {name => "Soil_moisture_1",	  size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
 	0x0F => {name => "Soil_moisture_2",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
 	0x10 => {name => "Soil_moisture_3",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
@@ -218,32 +223,32 @@ my %GW1000_SensorID = (
 	0x13 => {name => "Soil_moisture_6",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
 	0x14 => {name => "Soil_moisture_7",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
 	0x15 => {name => "Soil_moisture_8",   size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.1 },
-	0x16 => {name => "unknown_16", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x17 => {name => "unknown_17", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x18 => {name => "unknown_18", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x19 => {name => "unknown_19", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x1A => {name => "unknown_1A", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x1B => {name => "unknown_1B", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x1C => {name => "unknown_1C", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x1D => {name => "unknown_1D", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x1E => {name => "unknown_1E", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x1F => {name => "unknown_1F", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x20 => {name => "unknown_20", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x21 => {name => "unknown_21", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x22 => {name => "unknown_22", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x23 => {name => "unknown_23", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x24 => {name => "unknown_24", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x25 => {name => "unknown_25", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x26 => {name => "unknown_26", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x27 => {name => "unknown_27", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x28 => {name => "unknown_28", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x29 => {name => "unknown_29", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x2A => {name => "unknown_2A", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x2B => {name => "unknown_2B", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x2C => {name => "unknown_2C", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x2D => {name => "unknown_2D", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x2E => {name => "unknown_2E", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
-	0x2F => {name => "unknown_2F", 		  size => 4, isSigned => 1, batteryType => Battery_Binary, Battery_Scaling => 0 },
+	0x16 => {name => "unknown_16", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x17 => {name => "unknown_17", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x18 => {name => "unknown_18", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x19 => {name => "unknown_19", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x1A => {name => "unknown_1A", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x1B => {name => "unknown_1B", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x1C => {name => "unknown_1C", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x1D => {name => "unknown_1D", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x1E => {name => "unknown_1E", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x1F => {name => "unknown_1F", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x20 => {name => "unknown_20", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x21 => {name => "unknown_21", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x22 => {name => "unknown_22", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x23 => {name => "unknown_23", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x24 => {name => "unknown_24", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x25 => {name => "unknown_25", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x26 => {name => "unknown_26", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x27 => {name => "unknown_27", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x28 => {name => "unknown_28", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x29 => {name => "unknown_29", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x2A => {name => "unknown_2A", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x2B => {name => "unknown_2B", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x2C => {name => "unknown_2C", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x2D => {name => "unknown_2D", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x2E => {name => "unknown_2E", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
+	0x2F => {name => "unknown_2F", 		  size => 4, isSigned => 1, batteryType => 0, Battery_Scaling => 0 },
 	0x30 => {name => "WS90",              size => 4, isSigned => 1, batteryType => 1, Battery_Scaling => 0.02 },
 );
 use constant {
@@ -272,6 +277,7 @@ my %sets = (
 	"open"         => "noArg",
 	"close"        => "noArg",
 	"restart"      => "noArg",
+	"test"			=> "noArg",
 );
 
 sub GW1000_TCP_Initialize($) {
@@ -293,6 +299,7 @@ sub GW1000_TCP_Initialize($) {
         join(' ', values %attributeMap). " "   #add attributes from %attributeMap
         . $readingFnAttributes;
 }
+# function prototyping
 sub GW1000_TCP_InitConnection($);
 sub GW1000_TCP_Connect($$);
 sub GW1000_TCP_Reopen($;$);
@@ -402,7 +409,9 @@ sub GW1000_TCP_Set($@) {
 	} elsif ($cmd eq "open") {
 		GW1000_TCP_InitConnection($hash);
 	} elsif ($cmd eq "restart") {
-		#ToDo GW1000_TCP_send($hash, );
+		GW1000_TCP_Restart($hash);
+	} elsif ($cmd eq "test") {
+	    GW1000_TCP_TestCmd($hash);
 	} else {
 		return "Unknown argument ${cmd}, choose one of " .
 		    join(" ",map {"$_" . ($sets{$_} ? ":$sets{$_}" : "")} keys %sets);
@@ -488,7 +497,38 @@ sub GW1000_TCP_GetUpdate($)
 	}
 	Log3 $name, 5, "GW1000_TCP_GetUpdate() End.";  
 }
+sub GW1000_TCP_TestCmd($)
+{
+	my ($hash) = @_;
+	my $name = $hash->{NAME};	
 
+	Log3 $name, 5, "GW1000_TCP_TestCmd() Start.";  
+	my $testCmd = $GW1000_cmdMap{CMD_GET_MulCH_OFFSET};
+	my @data = 0; #( 0x04, 0x04 );
+	
+	if ($hash->{DevState} == GW1000_TCP_STATE_IDLE)
+	{
+		RemoveInternalTimer($hash, "GW1000_TCP_GetUpdate");
+	
+		$hash->{DevState} = GW1000_TCP_STATE_QUERY_APP;
+		
+		# data to send to a server
+		my @packet;
+		push(@packet, @GW1000_header);
+		push(@packet, $testCmd);
+		#push(@packet, scalar(@data) + 3);
+		push(@packet, 0x03);
+		push(@packet, sum(@packet) - sum(@GW1000_header));
+		
+		my $req = pack('C*', @packet);
+
+
+		my $sendtime = scalar(gettimeofday());
+		DevIo_SimpleWrite($hash, $req, 0);
+		Log3 $hash, 2, "GW1000_TCP_TestCmd (".length($req)."): ".unpack("H*", $req);
+	}
+	Log3 $name, 5, "GW1000_TCP_TestCmd() End.";  
+}
 sub GW1000_TCP_Connect($$)
 {
 	my ($hash, $err) = @_;
@@ -563,10 +603,10 @@ sub GW1000_TCP_Restart($;$)
 	GW1000_TCP_send_frame($hash, $GW1000_cmdMap{CMD_WRITE_REBOOT}, 0);
 	GW1000_TCP_updateCondition($hash);
 	
-	GW1000_TCP_Undef($hash, $name, $noclose);
+#	GW1000_TCP_Undef($hash, $name, $noclose);
 #CMD_WRITE_REBOOT
   	Log3 $hash, 5, "GW1000_TCP_Restart() End.";  
-	return DevIo_OpenDev($hash, 1, "GW1000_TCP_DoInit", \&GW1000_TCP_Connect);
+#	return DevIo_OpenDev($hash, 1, "GW1000_TCP_DoInit", \&GW1000_TCP_Connect);
 }
 
 sub GW1000_TCP_DoInit($)
@@ -704,9 +744,10 @@ sub GW1000_TCP_updateCondition($)
 #	}
 }
 
+# GW1000_TCP_send_frame() buils the packet to send : header+cmd+lenght+data+CRC
 sub GW1000_TCP_send_frame($$@) 
 {
-	my ($hash, $cmd, @data) = @_;
+	my ($hash, $cmd, $size, @data) = @_;
 	my $name = $hash->{NAME};
 
 	Log3 $hash, 5, "GW1000_TCP_send_frame start. cmd: $cmd";
@@ -724,7 +765,7 @@ sub GW1000_TCP_send_frame($$@)
 
 	my $sendtime = scalar(gettimeofday());
 	DevIo_SimpleWrite($hash, $req, 0);
-	Log3 $hash, 2, "GW1000_TCP_send_frame write raw (".length($req)."): ".unpack("H*", $req);
+	Log3 $hash, 3, "GW1000_TCP_send_frame write raw (".length($req)."): ".unpack("H*", $req);
 
 	$sendtime;
 }
@@ -779,9 +820,8 @@ sub GW1000_TCP_Read($)
 	return "" if (!defined($buf));
 
 	my $err = "";
-	#$buf = GW1000_TCP_decrypt($hash, $buf) if ($hash->{'.crypto'});
 
-	Log3($hash, 5, "GW1000_TCP ${name} read raw (".length($buf)."): ".unpack("H*", $buf));
+	Log3($hash, 5, "GW1000_TCP ${name} read raw (".length($buf)."): ".GW1000_hexDump($buf));
 
 	my $p = pack("H*", $hash->{PARTIAL}) . $buf;
 	$hash->{PARTIAL} .= unpack("H*", $buf);
@@ -873,6 +913,17 @@ sub GW1000_TCP_Read($)
 }
 
 ##aux functions
+sub GW1000_hexDump($)
+{
+	my ($buf) = @_;
+
+	my @retval;
+	my @array = unpack("C*", $buf);
+	for (my $i = 0; $i < scalar(@array); $i++) {
+		push (@retval, sprintf('%02x', $array[$i]));
+	}
+	return "[" . join(" ", @retval) . "]";
+}
 
 sub updateData($$@) {
 	my ($hash, $cmd, @data) = @_;
@@ -886,6 +937,13 @@ sub updateData($$@) {
 	if ($cmd == $GW1000_cmdMap{CMD_READ_STATION_MAC}) {
 		
 		readingsSingleUpdate($hash, "StationMac", sprintf("%x %x %x %x %x %x", @data), 1 );
+	}
+	elsif ($cmd == $GW1000_cmdMap{CMD_WRITE_REBOOT}) {
+		my $resetQuit = shift(@data);
+		$msg = sprintf("%s returns (0x%x)",$GW1000_cmdMap_reversed{$cmd}, $resetQuit);
+		Log3 $name, 4, "GW1000_TCP: $msg"; 
+		
+		InternalTimer(gettimeofday() + AttrVal($name, "commandTimeout", GW1000_TCP_CMD_TIMEOUT), "GW1000_TCP_InitConnection", $hash, 0);
 	}
 	elsif ($cmd == $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}) {
 		shift(@data);
@@ -945,15 +1003,15 @@ sub updateData($$@) {
 		Log3 $name, 5, "GW1000_TCP : " . $readingsName . " : " . $dstStatus;
 	}
 	elsif ($cmd == $GW1000_cmdMap{CMD_READ_SENSOR_ID_NEW}) {
-		$msg = sprintf("updateData() $cmd(%s)",   $cmd);	
-	    Log3 $name, 5, $msg;
+		# $msg = sprintf("updateData() $cmd(%s)",   $cmd);	
+	    # Log3 $name, 5, $msg;
 	
 		readingsBeginUpdate($hash);
 		
 		my $dataLength = @data;
 		my $item = shift(@data);
-		$msg = sprintf("updateData() cmd: (%s) item: %x  Length:%s",   $cmd, $item, $dataLength);		
-	    Log3 $name, 5, $msg;
+		# $msg = sprintf("updateData() cmd: (%s) item: %x  Length:%s",   $cmd, $item, $dataLength);		
+	    # Log3 $name, 5, $msg;
 		while ($dataLength > 0) {
 			#$msg = sprintf("updateData() $item(%s) : (0x%x)",  $GW1000_SensorID{$item}{name}, $item);	
 		    #Log3 $name, 5, $msg;
@@ -976,7 +1034,7 @@ sub updateData($$@) {
 				#$value *= $GW1000_Items{$item}{factor};
 				if ($value != 0xFFFFFFFF && $value != 0xFFFFFFFE)
 				{
-					if ($GW1000_SensorID{$item}{batteryType} == Battery_ByteVal)
+					if ($GW1000_SensorID{$item}{batteryType} == 1)
 					{
 						$msg = sprintf("battery: %x", $batteryValue);
 						#$batteryValue = unpack('c', pack('C', $batteryValue));
@@ -1078,9 +1136,24 @@ sub updateData($$@) {
 				
 				$msg = sprintf("Received %s (0x%x) = %2.1f",  $GW1000_Items{$item}{name}, $item, $value);	
 				Log3 $name, 4, "GW1000_TCP: $msg"; 
-				if (!($item == 0x87) || ($item == 0x88))
-				{
+				if (!(($item == 0x87) || ($item == 0x88))){
 					readingsBulkUpdate($hash, $GW1000_Items{$item}{name}, sprintf("%2.1f", $value) );
+				} elsif ($item == 0x88) {
+					my $hourmask   = 0b00000000_00011111_00000000_00000000;
+					my $daymask    = 0b00000000_00000000_00000001_00000000;
+					my $monthmask  = 0b00000000_00000000_00000000_00001111;
+					 
+					my $resethour  = ($value & $hourmask) >> (16);
+					my $resetday   = ($value & $daymask ) >> (8);
+					my $resetmonth = ($value & $monthmask);
+					
+					# Debug(sprintf("value: 0x%08x resethour: 0x%08x  resetday: 0x%08x  resetmonth: 0x%08x",$value , $resethour, ($resetday ), ($resetmonth) ));
+					my @resDay = ("Son", "Mon");
+					my @resMonth = ( "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez");
+					
+					readingsBulkUpdate($hash, $GW1000_Items{$item}{name} . "_hour", sprintf("%02d", $resethour) );
+					readingsBulkUpdate($hash, $GW1000_Items{$item}{name} . "_day",  @resDay[$resetday] );
+					readingsBulkUpdate($hash, $GW1000_Items{$item}{name} . "_month", @resMonth[$resetmonth] );
 				}
 			} else {
 				$msg = sprintf("Item (0x%x) is unknown. Skipping complete package!", $item);
@@ -1088,10 +1161,8 @@ sub updateData($$@) {
 				readingsEndUpdate($hash, 1);
 				return 1;
 			}
-			
 		}
 		readingsEndUpdate($hash, 1);
-		
 	}
 	else {
 		Log3 $name, 1, "GW1000_TCP: Unkown data received. Skipping!"; 
