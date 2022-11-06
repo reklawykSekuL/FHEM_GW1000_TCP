@@ -98,7 +98,7 @@ my %GW1000_Items = (
 	0x16 => {name => "UV", 							size => 2, isSigned => 0, factor => 1, unit => "uW/m2"}, 
 	0x17 => {name => "UVI", 						size => 1, isSigned => 0, factor => 1, unit => "0-15 index"},
 	0x18 => {name => "Date_and_time",				size => 6, isSigned => 0, factor => 1, unit => "-"},
-	0x19 => {name => "Day_max_wind", 				size => 2, isSigned => 0, factor => 1, unit => "m/s"}, 
+	0x19 => {name => "Day_max_wind", 				size => 2, isSigned => 0, factor => 0.1, unit => "m/s"}, 
 	0x1A => {name => "CH1_Temperature",				size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
 	0x1B => {name => "CH2_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
 	0x1C => {name => "CH3_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
@@ -955,13 +955,13 @@ sub updateData($$@) {
 		my $readingsName = "WirelessReceiveFrequency";
 		my $valueItem = shift(@data);
 		if ($valueItem == 0) {
-				$rfFrequency = "433MHz";
+				$rfFrequency = "433 [MHz]";
 		}  elsif ($valueItem == 1) {
-				$rfFrequency = "868MHz";
+				$rfFrequency = "868 [MHz]";
 		} elsif ($valueItem == 2) {
-				$rfFrequency = "915MHz";
+				$rfFrequency = "915 [MHz]";
 		} elsif ($valueItem == 3) {
-				$rfFrequency = "920MHz";
+				$rfFrequency = "920 [MHz]";
 		} else {
 				$rfFrequency = "unknown value";
 		}
@@ -989,15 +989,15 @@ sub updateData($$@) {
 		# we skip 1Bytes Timezone Index
 		$valueItem = shift(@data);
 		
-		my $dstStatus = "";
+		my @dstStatus = ( "OFF", "ON", "unknown value");
 		$readingsName = "DST status";
 		$valueItem = shift(@data);
-		if ($valueItem == 1) {
+		if ($valueItem == 1)  {
 			$dstStatus = "ON";
 		} elsif ($valueItem == 0) {
 			$dstStatus = "OFF";
 		} else {
-			$sensorType = "unknown value";
+			$valueItem = 2;
 		}
 		readingsSingleUpdate($hash, $readingsName, $dstStatus, 1 );
 		Log3 $name, 5, "GW1000_TCP : " . $readingsName . " : " . $dstStatus;
