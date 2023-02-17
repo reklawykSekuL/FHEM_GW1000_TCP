@@ -25,67 +25,67 @@ use List::Util 'sum';
 # GW1000,1100 WH2680,2650 telenet v1.6.4.pdf, page 7 - 9
 
 my %GW1000_cmdMap = (
-	CMD_WRITE_SSID 				=> 0x11,		# send SSID and Password to WIFI module
-	CMD_BROADCAST 				=> 0x12,		# UDP cast for device echo，answer back data size is 2 Bytes
-	CMD_READ_ECOWITT 			=> 0x1E,		# read aw.net setting
-	CMD_WRITE_ECOWITT 			=> 0x1F,		# write back awt.net setting
-	CMD_READ_WUNDERGROUND 		=> 0x20,		# read Wunderground setting
-	CMD_WRITE_WUNDERGROUND 		=> 0x21,		# write back Wunderground setting
-	CMD_READ_WOW 				=> 0x22,		# read WeatherObservationsWebsite setting
-	CMD_WRITE_WOW 				=> 0x23,		# write back WeatherObservationsWebsite setting
-	CMD_READ_WEATHERCLOUD 		=> 0x24,		# read Weathercloud setting
-	CMD_WRITE_WEATHERCLOUD 		=> 0x25,		# write back Weathercloud setting
+	CMD_WRITE_SSID 				=> 0x11,		# ToDo # send SSID and Password to WIFI module
+	CMD_BROADCAST 				=> 0x12,		# ToDo # UDP cast for device echo，answer back data size is 2 Bytes
+	CMD_READ_ECOWITT 			=> 0x1E,		# ToDo # read aw.net setting
+	CMD_WRITE_ECOWITT 			=> 0x1F,		# ToDo # write back awt.net setting
+	CMD_READ_WUNDERGROUND 		=> 0x20,		# ToDo # read Wunderground setting
+	CMD_WRITE_WUNDERGROUND 		=> 0x21,		# ToDo # write back Wunderground setting
+	CMD_READ_WOW 				=> 0x22,		# ToDo # read WeatherObservationsWebsite setting
+	CMD_WRITE_WOW 				=> 0x23,		# ToDo # write back WeatherObservationsWebsite setting
+	CMD_READ_WEATHERCLOUD 		=> 0x24,		# ToDo # read Weathercloud setting
+	CMD_WRITE_WEATHERCLOUD 		=> 0x25,		# ToDo # write back Weathercloud setting
 	CMD_READ_STATION_MAC		=> 0x26,		# read MAC address
-	CMD_READ_CUSTOMIZED 		=> 0x2A,		# read Customized sever setting
-	CMD_WRITE_CUSTOMIZED 		=> 0x2B,		#  write back Customized sever setting
-	CMD_WRITE_UPDATE 			=> 0x43,		# firmware upgrade
-	CMD_READ_FIRMWARE_VERSION 	=> 0x50,		# read current firmware version number
-	CMD_READ_USR_PATH 			=> 0x51,		
-	CMD_WRITE_USR_PATH 			=> 0x52,		
-	CMD_GW1000_LIVEDATA 		=> 0x27,		# read current data，reply data size is 2bytes. only valid for GW1000, WH2650 and wn1900
-	CMD_GET_SOILHUMIAD 			=> 0x28,		# read Soilmoisture Sensor calibration parameters
-	CMD_SET_SOILHUMIAD 			=> 0x29,		# write back Soilmoisture Sensor calibration parameters
-	CMD_GET_MulCH_OFFSET 		=> 0x2C,		# read multi channel sensor offset value
-	CMD_SET_MulCH_OFFSET 		=> 0x2D,		# write back multi channel sensor OFFSET value
-	CMD_GET_PM25_OFFSET 		=> 0x2E,		# read PM2.5OFFSET calibration data
-	CMD_SET_PM25_OFFSET 		=> 0x2F,		# writeback PM2.5OFFSET calibration data
-	CMD_READ_SSSS 				=> 0x30,		# read system info
-	CMD_WRITE_SSSS 				=> 0x31,		# write back system info
+	CMD_READ_CUSTOMIZED 		=> 0x2A,		# ToDo # read Customized sever setting
+	CMD_WRITE_CUSTOMIZED 		=> 0x2B,		# ToDo #  write back Customized sever setting
+	CMD_WRITE_UPDATE 			=> 0x43,		# ToDo # firmware upgrade
+	CMD_READ_FIRMWARE_VERSION 	=> 0x50,		# OK   # read current firmware version number
+	CMD_READ_USR_PATH 			=> 0x51,		# ToDo 
+	CMD_WRITE_USR_PATH 			=> 0x52,		# ToDo 
+	CMD_GW1000_LIVEDATA 		=> 0x27,		# OK   # read current data，reply data size is 2bytes. only valid for GW1000, WH2650 and wn1900
+	CMD_GET_SOILHUMIAD 			=> 0x28,		# ToDo # read Soilmoisture Sensor calibration parameters
+	CMD_SET_SOILHUMIAD 			=> 0x29,		# ToDo # write back Soilmoisture Sensor calibration parameters
+	CMD_GET_MulCH_OFFSET 		=> 0x2C,		# ToDo # read multi channel sensor offset value
+	CMD_SET_MulCH_OFFSET 		=> 0x2D,		# ToDo # write back multi channel sensor OFFSET value
+	CMD_GET_PM25_OFFSET 		=> 0x2E,		# ToDo # read PM2.5OFFSET calibration data
+	CMD_SET_PM25_OFFSET 		=> 0x2F,		# ToDo # writeback PM2.5OFFSET calibration data
+	CMD_READ_SSSS 				=> 0x30,		# OK   # read system info
+	CMD_WRITE_SSSS 				=> 0x31,		# ToDo # write back system info
 	CMD_READ_RAINDATA 			=> 0x34,		# read rain data
-	CMD_WRITE_RAINDATA 			=> 0x35,		# write back rain data
-	CMD_READ_GAIN 				=> 0x36,		# read rain gain
-	CMD_WRITE_GAIN 				=> 0x37,		# write back rain gain
-	CMD_READ_CALIBRATION 		=> 0x38,		# read sensor set offset calibration value
-	CMD_WRITE_CALIBRATION 		=> 0x39,		# write back sensor set offset value
+	CMD_WRITE_RAINDATA 			=> 0x35,		# ToDo # write back rain data
+	CMD_READ_GAIN 				=> 0x36,		# ToDo # read rain gain
+	CMD_WRITE_GAIN 				=> 0x37,		# ToDo # write back rain gain
+	CMD_READ_CALIBRATION 		=> 0x38,		# ToDo # read sensor set offset calibration value
+	CMD_WRITE_CALIBRATION 		=> 0x39,		# ToDo # write back sensor set offset value
 	CMD_READ_SENSOR_ID 			=> 0x3A,		# read Sensors ID
-	CMD_WRITE_SENSOR_ID 		=> 0x3B,		# write back Sensors ID
+	CMD_WRITE_SENSOR_ID 		=> 0x3B,		# ToDo # write back Sensors ID
 	CMD_READ_SENSOR_ID_NEW 		=> 0x3C,		# this is reserved for newly added sensor
 	CMD_WRITE_REBOOT 			=> 0x40,		# system restart
-	CMD_WRITE_RESET 			=> 0x41,		# reset to default
-	CMD_READ_CUSTOMIZED_PATH 	=> 0x51,		
-	CMD_WRITE_CUSTOMIZED_PATH 	=> 0x52,		
-	CMD_GET_CO2_OFFSET 			=> 0x53,		# CO2 OFFSET
-	CMD_SET_CO2_OFFSET 			=> 0x54,		# CO2 OFFSET
-	CMD_READ_RSTRAIN_TIME       => 0x57,        # read rain and piezo rain data and reset setting
-	CMD_WRITE_RSTRAIN_TIME      => 0x58,        # write rain and piezo rain data and reset setting
+	CMD_WRITE_RESET 			=> 0x41,		# ToDo # reset to default
+	CMD_READ_CUSTOMIZED_PATH 	=> 0x51,		# ToDo 
+	CMD_WRITE_CUSTOMIZED_PATH 	=> 0x52,		# ToDo 
+	CMD_GET_CO2_OFFSET 			=> 0x53,		# ToDo # CO2 OFFSET
+	CMD_SET_CO2_OFFSET 			=> 0x54,		# ToDo # CO2 OFFSET
+	CMD_READ_RSTRAIN_TIME       => 0x57,        # OK   # read rain and piezo rain data and reset setting
+	CMD_WRITE_RSTRAIN_TIME      => 0x58,        # ToDo # write rain and piezo rain data and reset setting
 	
 );
 my %GW1000_cmdMap_reversed = reverse %GW1000_cmdMap;
 
 # GW1000,1100 WH2680,2650 telenet v1.6.4.pdf, page 7 - 9
 my %GW1000_Items = (
-	0x01 => {name => "Indoor_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x02 => {name => "Outdoor_Temperature", 		size => 2, isSigned => 1, factor => 0.1, unit => "°C"}, 
+	0x01 => {name => "Temperature_Indoor", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x02 => {name => "Temperature_Outdoor", 		size => 2, isSigned => 1, factor => 0.1, unit => "°C"}, 
 	0x03 => {name => "Dew_point",		 			size => 2, isSigned => 0, factor => 1, unit => "°C"}, 
 	0x04 => {name => "Wind_chill", 					size => 2, isSigned => 0, factor => 1, unit => "°C"},
 	0x05 => {name => "Heat_index", 					size => 2, isSigned => 0, factor => 1, unit => "°C"},
-	0x06 => {name => "Indoor_Humidity", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x07 => {name => "Outdoor_Humidity", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
-	0x08 => {name => "Absolutely_Barometric ", 		size => 2, isSigned => 0, factor => 0.1, unit => "hpa"}, 
-	0x09 => {name => "Relative_Barometric", 		size => 2, isSigned => 0, factor => 0.1, unit => "hpa"},
-	0x0A => {name => "Wind_Direction", 				size => 2, isSigned => 0, factor => 1, unit => "360°"},
+	0x06 => {name => "Humidity_Indoor", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x07 => {name => "Humidity_Outdoor", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
+	0x08 => {name => "Barometric_Absolutely", 		size => 2, isSigned => 0, factor => 0.1, unit => "hpa"}, 
+	0x09 => {name => "Barometric_Relative", 		size => 2, isSigned => 0, factor => 0.1, unit => "hpa"},
+	0x0A => {name => "Wind_Direction", 				size => 2, isSigned => 0, factor => 1, unit => "°"},
 	0x0B => {name => "Wind_Speed ", 				size => 2, isSigned => 0, factor => 0.1, unit => "m/s"}, 
-	0x0C => {name => "Gust_Wind_Speed", 			size => 2, isSigned => 0, factor => 0.1, unit => "m/s"}, 
+	0x0C => {name => "Wind_Speed_Gust", 			size => 2, isSigned => 0, factor => 0.1, unit => "m/s"}, 
 	0x0D => {name => "Rain_Event", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
 	0x0E => {name => "Rain_Rate", 					size => 2, isSigned => 0, factor => 1, unit => "mm/h"},
 	0x0F => {name => "Rain_Hour ", 					size => 2, isSigned => 0, factor => 1, unit => "mm"}, 
@@ -95,27 +95,27 @@ my %GW1000_Items = (
 	0x13 => {name => "Rain_Year", 					size => 4, isSigned => 0, factor => 1, unit => "mm"}, 
 	0x14 => {name => "Rain_Totals", 				size => 4, isSigned => 0, factor => 1, unit => "mm"}, 
 	0x15 => {name => "Light", 						size => 4, isSigned => 0, factor => 1, unit => "lux"}, 
-	0x16 => {name => "UV", 							size => 2, isSigned => 0, factor => 1, unit => "uW/m2"}, 
-	0x17 => {name => "UVI", 						size => 1, isSigned => 0, factor => 1, unit => "0-15 index"},
+	0x16 => {name => "UV", 							size => 2, isSigned => 0, factor => 1, unit => "uW/m²"}, 
+	0x17 => {name => "UVI", 						size => 1, isSigned => 0, factor => 1, unit => "-"},
 	0x18 => {name => "Date_and_time",				size => 6, isSigned => 0, factor => 1, unit => "-"},
-	0x19 => {name => "Day_max_wind", 				size => 2, isSigned => 0, factor => 1, unit => "m/s"}, 
-	0x1A => {name => "CH1_Temperature",				size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x1B => {name => "CH2_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x1C => {name => "CH3_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x1D => {name => "CH4_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x1E => {name => "CH5_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x1F => {name => "CH6_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x20 => {name => "CH7_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x21 => {name => "CH8_Temperature", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
-	0x22 => {name => "CH1_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x23 => {name => "CH2_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x24 => {name => "CH3_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x25 => {name => "CH4_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x26 => {name => "CH5_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x27 => {name => "CH6_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x28 => {name => "CH7_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x29 => {name => "CH8_Humidity", 				size => 1, isSigned => 0, factor => 1, unit => "0-100%"},
-	0x2A => {name => "PM2.5_Air_Quality_Sensor",	size => 2, isSigned => 0, factor => 1, unit => "μg/m3"},  
+	0x19 => {name => "Wind_Day_max", 				size => 2, isSigned => 0, factor => 0.1, unit => "m/s"}, 
+	0x1A => {name => "Temperature_CH1",				size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x1B => {name => "Temperature_CH2", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x1C => {name => "Temperature_CH3", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x1D => {name => "Temperature_CH4", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x1E => {name => "Temperature_CH5", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x1F => {name => "Temperature_CH6", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x20 => {name => "Temperature_CH7", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x21 => {name => "Temperature_CH8", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
+	0x22 => {name => "Humidity_CH1", 				size => 1, isSigned => 0, factor => 1, unit => "%"},
+	0x23 => {name => "Humidity_CH2", 				size => 1, isSigned => 0, factor => 1, unit => "%"},
+	0x24 => {name => "Humidity_CH3", 				size => 1, isSigned => 0, factor => 1, unit => "%"},
+	0x25 => {name => "Humidity_CH4", 				size => 1, isSigned => 0, factor => 1, unit => "%"},
+	0x26 => {name => "Humidity_CH5", 				size => 1, isSigned => 0, factor => 1, unit => "%"},
+	0x27 => {name => "Humidity_CH6", 				size => 1, isSigned => 0, factor => 1, unit => "%"},
+	0x28 => {name => "Humidity_CH7", 				size => 1, isSigned => 0, factor => 1, unit => "%"},
+	0x29 => {name => "Humidity_CH8", 				size => 1, isSigned => 0, factor => 1, unit => "%"},
+	0x2A => {name => "PM2.5_Air_Quality_Sensor",	size => 2, isSigned => 0, factor => 1, unit => "μg/m³"},  
 	0x2B => {name => "Soil_Temperature_1", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
 	0x2C => {name => "Soil_Moisture_1", 			size => 1, isSigned => 0, factor => 1, unit => "%"}, 
 	0x2D => {name => "Soil_Temperature_2", 			size => 2, isSigned => 1, factor => 0.1, unit => "°C"},
@@ -160,7 +160,7 @@ my %GW1000_Items = (
 	0x59 => {name => "Leak_ch2", 					size => 1, isSigned => 0, factor => 1, unit => "-"}, 
 	0x5A => {name => "Leak_ch3", 					size => 1, isSigned => 0, factor => 1, unit => "-"}, 
 	0x5B => {name => "Leak_ch4", 					size => 1, isSigned => 0, factor => 1, unit => "-"}, 
-	0x60 => {name => "lightning_distance", 			size => 1, isSigned => 0, factor => 1, unit => "1~40km"},  
+	0x60 => {name => "lightning_distance", 			size => 1, isSigned => 0, factor => 1, unit => "km"},  
 	0x61 => {name => "lightning_happened_time", 	size => 4, isSigned => 0, factor => 1, unit => "UTC"}, 
 	0x62 => {name => "lightning_counter_for_the_day", size => 4, isSigned => 0, factor => 1, unit => "-"}, 
 	
@@ -185,14 +185,14 @@ my %GW1000_Items = (
 	#added in API version 1.6.4
 	0x7A => {name => "Unknown_0x7A",				size => 1, isSigned => 0, factor => 1, unit => "-"},
 	0x80 => {name => "Piezo_Rain_Rate",				size => 2, isSigned => 0, factor => 0.1, unit => "mm"}, 
-	0x81 => {name => "Piezo_Event_Rain",			size => 2, isSigned => 0, factor => 0.1, unit => "mm"}, 
-	0x82 => {name => "Piezo_Hourly_Rain",			size => 2, isSigned => 0, factor => 0.1, unit => "mm"}, 
-	0x83 => {name => "Piezo_Daily_Rain",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
-	0x84 => {name => "Piezo_Weekly_Rain",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
-	0x85 => {name => "Piezo_Monthly_Rain",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
-	0x86 => {name => "Piezo_Yearly_Rain",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x81 => {name => "Piezo_Rain_Event",			size => 2, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x82 => {name => "Piezo_Rain_Hourly",			size => 2, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x83 => {name => "Piezo_Rain_Daily",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x84 => {name => "Piezo_Rain_Weekly",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x85 => {name => "Piezo_Rain_Monthly",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
+	0x86 => {name => "Piezo_Rain_Yearly",			size => 4, isSigned => 0, factor => 0.1, unit => "mm"}, 
 	0x87 => {name => "Piezo_Gain10",                size => 20, isSigned => 0, factor => 1, unit => "-"},
-	0x88 => {name => "Piezo_Reset_RainTime",        size => 3, isSigned => 0, factor => 1, unit => "-"},
+	0x88 => {name => "Piezo_RainTime_Reset",        size => 3, isSigned => 0, factor => 1, unit => "-"},
 );
 
 use constant {
@@ -279,7 +279,7 @@ my %sets = (
 	"restart"      => "noArg",
 	"test"			=> "noArg",
 );
-
+sub GW1000_TCP_Initialize($);
 sub GW1000_TCP_Initialize($) {
     my ($hash) = @_;
 
@@ -290,9 +290,9 @@ sub GW1000_TCP_Initialize($) {
     $hash->{AttrFn}     = 'GW1000_TCP_Attr';
     $hash->{ReadFn}     = 'GW1000_TCP_Read';
     $hash->{ReadyFn}    = "GW1000_TCP_Ready";
-	$hash->{WriteFn}    = "GW1000_TCP_Write";
+    $hash->{WriteFn}    = "GW1000_TCP_Write";
     $hash->{NotifyFn}   = "GW1000_TCP_Notify";
-	$hash->{ShutdownFn} = "GW1000_TCP_Shutdown";
+    $hash->{ShutdownFn} = "GW1000_TCP_Shutdown";
 
     #TODO fill AttrList from %attributeMap
     $hash->{AttrList} =
@@ -300,12 +300,28 @@ sub GW1000_TCP_Initialize($) {
         . $readingFnAttributes;
 }
 # function prototyping
-sub GW1000_TCP_InitConnection($);
+sub GW1000_TCP_Define($$);
+sub GW1000_TCP_Undef($$;$);
+sub GW1000_TCP_Get($@);
+sub GW1000_TCP_Set($@);
+sub GW1000_TCP_Attr(@);
+sub GW1000_TCP_Notify($$);
+sub GW1000_TCP_GetUpdate($);
+sub GW1000_TCP_TestCmd($);
 sub GW1000_TCP_Connect($$);
+sub GW1000_TCP_Ready($);
 sub GW1000_TCP_Reopen($;$);
+sub GW1000_TCP_Restart($;$);
+sub GW1000_TCP_DoInit($);
+sub GW1000_TCP_StartInit($);
+sub GW1000_TCP_InitConnection($);
+sub GW1000_TCP_Shutdown($);
+sub GW1000_TCP_updateCondition($);
+sub GW1000_TCP_send_frame($$@); 
+sub GW1000_TCP_CheckCmdResp($);
 sub GW1000_TCP_Read($);
-sub GW1000_TCP_send($$$;$);
-#sub GW1000_TCP_send_frame($$@);
+sub GW1000_hexDump($);
+sub updateData($$@);
 
 sub GW1000_TCP_Define($$) {
 	my ($hash, $def) = @_;
@@ -321,16 +337,18 @@ sub GW1000_TCP_Define($$) {
 
 	$hash->{name}  = $param[0];
 	$hash->{I_GW1000_IP} = $param[2];
-	$hash->{I_GW1000_Port} = $param[3];
+	if(int(@param) > 3) {
+		$hash->{I_GW1000_Port} = $param[3];
+	}
 
 	Log3 $hash->{name}, 5, "GW1000_TCP_Define() start.";  
 	# first argument is the hostname or IP address of the device (e.g. "192.168.1.120")
     my $dev = $hash->{I_GW1000_IP};
 
     return "no device given" unless($dev);
-  
-    # add a default port (45000), if not explicitly given by user
-    $dev .= ':45000' if(not $dev =~ m/:\d+$/);
+
+	# add port to the device  
+    $dev .= ":$hash->{I_GW1000_Port}" if(not $dev =~ m/:\d+$/);
 
 	# set the IP/Port for DevIo
   	$hash->{DeviceName} = $dev;
@@ -624,7 +642,7 @@ sub GW1000_TCP_DoInit($)
 	$hash->{XmitOpen} = 0;
 	$hash->{LastOpen} = gettimeofday();
 
-	$hash->{LGW_Init} = 1; #if ($hash->{DevType} =~ m/^LGW/);
+	# $hash->{LGW_Init} = 1; #if ($hash->{DevType} =~ m/^LGW/);
 
 	$hash->{Helper}{Log}{IDs} = [ split(/,/, AttrVal($name, "logIDs", "")) ];
 	$hash->{Helper}{Log}{Resolve} = 1;
@@ -936,7 +954,7 @@ sub updateData($$@) {
 	
 	if ($cmd == $GW1000_cmdMap{CMD_READ_STATION_MAC}) {
 		
-		readingsSingleUpdate($hash, "StationMac", sprintf("%x %x %x %x %x %x", @data), 1 );
+		readingsSingleUpdate($hash, "Station_MAC", sprintf("%x %x %x %x %x %x", @data), 1 );
 	}
 	elsif ($cmd == $GW1000_cmdMap{CMD_WRITE_REBOOT}) {
 		my $resetQuit = shift(@data);
@@ -948,20 +966,20 @@ sub updateData($$@) {
 	elsif ($cmd == $GW1000_cmdMap{CMD_READ_FIRMWARE_VERSION}) {
 		shift(@data);
 		my $x = join '', map chr, @data;
-		readingsSingleUpdate($hash, "Firmware Version", sprintf("%s" , $x), 1 );
+		readingsSingleUpdate($hash, "Firmware_Version", sprintf("%s" , $x), 1 );
 	}
 	elsif ($cmd == $GW1000_cmdMap{CMD_READ_SSSS}) {
 		my $rfFrequency = "";
-		my $readingsName = "WirelessReceiveFrequency";
+		my $readingsName = "SensorReceiveFrequency";
 		my $valueItem = shift(@data);
 		if ($valueItem == 0) {
-				$rfFrequency = "433MHz";
+				$rfFrequency = "433";
 		}  elsif ($valueItem == 1) {
-				$rfFrequency = "868MHz";
+				$rfFrequency = "868";
 		} elsif ($valueItem == 2) {
-				$rfFrequency = "915MHz";
+				$rfFrequency = "915";
 		} elsif ($valueItem == 3) {
-				$rfFrequency = "920MHz";
+				$rfFrequency = "920";
 		} else {
 				$rfFrequency = "unknown value";
 		}
@@ -990,7 +1008,7 @@ sub updateData($$@) {
 		$valueItem = shift(@data);
 		
 		my $dstStatus = "";
-		$readingsName = "DST status";
+		$readingsName = "DST_status";
 		$valueItem = shift(@data);
 		if ($valueItem == 1) {
 			$dstStatus = "ON";
@@ -1083,6 +1101,7 @@ sub updateData($$@) {
 		
 			if (exists($GW1000_Items{$item})) {
 				my $value = 0;
+				my $unit = "";
 				for (my $i = $GW1000_Items{$item}{size} - 1; $i >= 0; $i--) {
 					$value += shift(@data) * 2**(8*$i);
 				}
@@ -1095,12 +1114,19 @@ sub updateData($$@) {
 						Log3 $name, 1, "GW1000_TCP: $msg"; 
 					}
 				}
-			 
-				$value *= $GW1000_Items{$item}{factor};
+				my $formatString = "%2.1f";			 
+			 	if ($item != 0x17) {
+					$value *= $GW1000_Items{$item}{factor};
+			 	} else {
+			 		$formatString = "%2d";
+			 	}
+				if ($GW1000_Items{$item}{unit} ne "-") {
+					$unit = "[" . $GW1000_Items{$item}{unit} . "]";
+				}
 				
-				$msg = sprintf("Received %s (0x%x) = %2.1f",  $GW1000_Items{$item}{name}, $item, $value);	
+				$msg = sprintf("Received %s (0x%x) = " . $formatString . " %s", $GW1000_Items{$item}{name}, $item, $value, $unit);
 				Log3 $name, 4, "GW1000_TCP: $msg"; 
-				readingsBulkUpdate($hash, $GW1000_Items{$item}{name}, sprintf("%2.1f", $value) );
+				readingsBulkUpdate($hash, $GW1000_Items{$item}{name}, sprintf( $formatString, $value) );
 			} else {
 				$msg = sprintf("Item (0x%x) is unknown. Skipping complete package!", $item);
 				Log3 $name, 1, "GW1000_TCP: $msg"; 
@@ -1119,6 +1145,7 @@ sub updateData($$@) {
 		
 			if (exists($GW1000_Items{$item})) {
 				my $value = 0;
+				my $unit = "";
 				for (my $i = $GW1000_Items{$item}{size} - 1; $i >= 0; $i--) {
 					$value += shift(@data) * 2**(8*$i);
 				}
@@ -1133,12 +1160,17 @@ sub updateData($$@) {
 				}
 			 
 				$value *= $GW1000_Items{$item}{factor};
-				
-				$msg = sprintf("Received %s (0x%x) = %2.1f",  $GW1000_Items{$item}{name}, $item, $value);	
-				Log3 $name, 4, "GW1000_TCP: $msg"; 
+				if ($GW1000_Items{$item}{unit} ne "-") {
+					$unit = "[" . $GW1000_Items{$item}{unit} . "]";
+				}
 				if (!(($item == 0x87) || ($item == 0x88))){
+					$msg = sprintf("Received %s (0x%x) = %2.1f %s",  $GW1000_Items{$item}{name}, $item, $value, $unit);	
+					Log3 $name, 4, "GW1000_TCP: $msg"; 
 					readingsBulkUpdate($hash, $GW1000_Items{$item}{name}, sprintf("%2.1f", $value) );
 				} elsif ($item == 0x88) {
+					$msg = sprintf("Received %s (0x%x) = 0x%08x",  $GW1000_Items{$item}{name}, $item, $value);	
+					Log3 $name, 4, "GW1000_TCP: $msg"; 
+
 					my $hourmask   = 0b00000000_00011111_00000000_00000000;
 					my $daymask    = 0b00000000_00000000_00000001_00000000;
 					my $monthmask  = 0b00000000_00000000_00000000_00001111;
@@ -1152,8 +1184,8 @@ sub updateData($$@) {
 					my @resMonth = ( "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez");
 					
 					readingsBulkUpdate($hash, $GW1000_Items{$item}{name} . "_hour", sprintf("%02d", $resethour) );
-					readingsBulkUpdate($hash, $GW1000_Items{$item}{name} . "_day",  @resDay[$resetday] );
-					readingsBulkUpdate($hash, $GW1000_Items{$item}{name} . "_month", @resMonth[$resetmonth] );
+					readingsBulkUpdate($hash, $GW1000_Items{$item}{name} . "_day",  $resDay[$resetday] );
+					readingsBulkUpdate($hash, $GW1000_Items{$item}{name} . "_month", $resMonth[$resetmonth] );
 				}
 			} else {
 				$msg = sprintf("Item (0x%x) is unknown. Skipping complete package!", $item);
